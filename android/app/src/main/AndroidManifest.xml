@@ -1,0 +1,100 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- specialUse（API 34+）：签到监控是长时间运行的服务，dataSync 类型在 Android 15
+         有 24h 内 6 小时的强制超时（targetSdk 35 起），监控会被系统停掉。
+         本应用不在 Play 上架，specialUse 无需审核；API 29-34 仍走 dataSync（无超时）。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 现场采点仅在用户主动点击时读取一次位置；保存前转换为平台使用的 GCJ-02。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 考试强提醒：精确闹钟（Android 12+ 需授权）+ 全屏通知（Android 14+ 需授权） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 一加/ColorOS/MIUI 等桌面固定 Widget 需此权限，缺失会被静默拒绝（AddItemActivity 立即 finish） -->
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.XmuAssistant"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:ignore="DataExtractionRules">
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="xmurollcall" android:host="rollcall" />
+            </intent-filter>
+            <!-- 静态应用快捷方式：长按桌面图标直达签到情况/课表/成绩
+                 （meta-data 必须挂在 launcher activity 内，系统才会读取） -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <service
+            android:name=".RollcallMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|specialUse">
+            <!-- specialUse 用途声明（API 34+ 平台要求随服务携带） -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="长时课堂签到监控：后台轮询 TronClass 签到事件并在出现签到时推送提醒，属于持续性校务数据读取，不适用 dataSync 的 6 小时超时" />
+        </service>
+
+        <!-- 快捷设置磁贴：一键开/关签到监控（TileService 需 API 24+，minSdk 26 满足）。
+             系统绑定要求 BIND_QUICK_SETTINGS_TILE 权限声明 + QS_TILE action。 -->
+        <service
+            android:name=".MonitorControlTileService"
+            android:label="@string/tile_service_label"
+            android:icon="@drawable/ic_notification"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name=".ExamReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".ScheduleWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/schedule_widget_info" />
+        </receiver>
+    </application>
+</manifest>

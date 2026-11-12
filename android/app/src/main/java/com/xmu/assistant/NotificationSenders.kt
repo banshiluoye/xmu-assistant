@@ -1,0 +1,194 @@
+package com.xmu.assistant
+
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Properties
+import javax.mail.Message
+import javax.mail.PasswordAuthentication
+import javax.mail.Session
+import javax.mail.Transport
+import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMessage
+
+fun rollcallNotificationBody(event: RollcallEvent, actionUrl: String): String {
+    return buildList {
+        add("课程：${event.courseTitle}")
+        add("类型：${event.type}")
+        if (remainingSecondsFromDeadline(event.deadline) != null) add("截止：${event.deadline}")
+        add("状态：${event.result}")
+        add("打开：$actionUrl")
+    }.joinToString("\n")
+}
+
+class PushPlusSender(
+    private val token: String,
+    /** 端点注入（默认生产地址，行为零变化）：MockWebServer 行为测试用。 */
+    private val endpoint: String = "https://www.pushplus.plus/send",
+) {
+    fun send(title: String, body: String) {
+        require(token.isNotBlank()) { "PushPlus token is empty" }
+        val payload = """{"token":"${escapeJson(token)}","title":"${escapeJson(title)}","content":"${escapeJson(body)}","template":"txt"}"""
+        val conn = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 15000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(payload) }
+            if (conn.responseCode !in 200..299) error("PushPlus failed: ${conn.responseCode}")
+            // 流读取后关闭、连接断开：避免 keep-alive 连接无法归还池（句柄累积）
+            val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            // 业务码 200 只代表请求已受理。HTML/缺失业务码不能当成功；此处不重发。
+            val acknowledgement = runCatching { org.json.JSONObject(response) }.getOrElse {
+                error("PushPlus 返回异常，无法确认通知请求是否已受理")
+            }
+            val code = acknowledgement.opt("code")
+            if (code == null || code == org.json.JSONObject.NULL) {
+                error("PushPlus 返回异常，无法确认通知请求是否已受理")
+            }
+            // 避免 optInt 把 200.5 截成 200，兼容数字 200 和字符串 "200"。
+            if (code.toString() != "200") error("PushPlus 发送失败（code=$code）")
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+class QQMailSender internal constructor(
+    private val sender: String,
+    private val password: String,
+    private val recipient: String,
+    private val ports: String,
+    private val connectionFactory: SmtpConnectionFactory,
+) {
+    constructor(sender: String, password: String, recipient: String, ports: String = "465,587") :
+        this(sender, password, recipient, ports, JavaMailSmtpConnectionFactory)
+
+    fun send(title: String, body: String) {
+        require(sender.isNotBlank() && password.isNotBlank() && recipient.isNotBlank()) {
+            "QQ mail settings are incomplete"
+        }
+        val errors = mutableListOf<String>()
+        for (port in parseSmtpPorts(ports)) {
+            try {
+                sendWithPort(port, title, body)
+                return
+            } catch (error: SmtpSubmissionUncertainException) {
+                // DATA may already have been accepted. A fallback port would duplicate the mail.
+                throw error
+            } catch (error: Exception) {
+                errors += "$port: ${error.message}"
+            }
+        }
+        error(errors.joinToString("；"))
+    }
+
+    private fun sendWithPort(port: Int, title: String, body: String) {
+        val props = smtpProperties(port)
+        val session = Session.getInstance(props, object : javax.mail.Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication {
+                return PasswordAuthentication(sender, password)
+            }
+        })
+        val message = MimeMessage(session).apply {
+            // 显式 UTF-8：Session 级 mail.mime.charset 统一约束 From/Subject/正文的
+            // 缺省 charset（部分 ROM/JVM 实现缺省非 UTF-8 时中文会乱码）
+            setFrom(sender)
+            setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient))
+            setSubject(title, "UTF-8")
+            setText(body, "UTF-8")
+        }
+        var connection: SmtpConnection? = null
+        var submissionStarted = false
+        try {
+            connection = connectionFactory.open(props, sender, password)
+            submissionStarted = true
+            connection.send(message)
+        } catch (error: Exception) {
+            if (submissionStarted) throw SmtpSubmissionUncertainException("邮件提交结果未知：${error.message}", error)
+            throw error
+        } finally {
+            // A close/QUIT failure after a successful DATA response must never trigger another submission.
+            runCatching { connection?.close() }
+        }
+    }
+}
+
+internal interface SmtpConnection {
+    fun send(message: MimeMessage)
+    fun close()
+}
+
+internal fun interface SmtpConnectionFactory {
+    /** Returns only after TLS negotiation and authentication have completed. */
+    fun open(properties: Properties, sender: String, password: String): SmtpConnection
+}
+
+internal object JavaMailSmtpConnectionFactory : SmtpConnectionFactory {
+    override fun open(properties: Properties, sender: String, password: String): SmtpConnection {
+        val session = Session.getInstance(properties, object : javax.mail.Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication = PasswordAuthentication(sender, password)
+        })
+        val transport = session.getTransport("smtp")
+        transport.connect(
+            properties.getProperty("mail.smtp.host"),
+            properties.getProperty("mail.smtp.port").toInt(),
+            sender,
+            password,
+        )
+        return object : SmtpConnection {
+            override fun send(message: MimeMessage) = transport.sendMessage(message, message.allRecipients)
+            override fun close() = transport.close()
+        }
+    }
+}
+
+internal class SmtpSubmissionUncertainException(message: String, cause: Throwable) : IllegalStateException(message, cause)
+
+fun smtpProperties(port: Int): Properties = Properties().apply {
+    put("mail.smtp.auth", "true")
+    put("mail.mime.charset", "UTF-8")
+    put("mail.smtp.host", "smtp.qq.com")
+    put("mail.smtp.port", port.toString())
+    put("mail.smtp.connectiontimeout", SMTP_TIMEOUT_MILLIS.toString())
+    put("mail.smtp.timeout", SMTP_TIMEOUT_MILLIS.toString())
+    put("mail.smtp.writetimeout", SMTP_TIMEOUT_MILLIS.toString())
+    if (port == 465) {
+        put("mail.smtp.ssl.enable", "true")
+    } else {
+        put("mail.smtp.starttls.enable", "true")
+        put("mail.smtp.starttls.required", "true")
+    }
+    // JavaMail verifies the peer hostname for both implicit TLS and STARTTLS.
+    put("mail.smtp.ssl.checkserveridentity", "true")
+}
+
+private const val SMTP_TIMEOUT_MILLIS = 15_000
+
+fun parseSmtpPorts(value: String): List<Int> {
+    val ports = value.split(",")
+        .mapNotNull { it.trim().toIntOrNull() }
+        .filter { it in 1..65535 }
+        .distinct()
+    return ports.ifEmpty { listOf(465, 587) }
+}
+
+fun escapeJson(value: String): String = buildString {
+    value.forEach { ch ->
+        when {
+            ch == '\\' -> append("\\\\")
+            ch == '"' -> append("\\\"")
+            ch == '\n' -> append("\\n")
+            ch == '\r' -> append("\\r")
+            ch == '\t' -> append("\\t")
+            ch == '\b' -> append("\\b")
+            ch == '\u000C' -> append("\\f")
+            // 其余 <0x20 控制字符必须 \u00XX 转义：课程名含此类字符时 payload 是非法 JSON，
+            // PushPlus 会直接拒绝导致发送失败
+            ch < '\u0020' -> append("\\u%04x".format(ch.code))
+            else -> append(ch)
+        }
+    }
+}

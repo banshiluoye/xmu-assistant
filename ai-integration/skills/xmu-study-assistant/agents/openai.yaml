@@ -1,0 +1,4 @@
+interface:
+  display_name: "厦大学习助手"
+  short_description: "读课件讲知识、查询课程考核与作业要求，分析提供的成绩并处理作业成果"
+  default_prompt: "用 $xmu-study-assistant 根据我的课程资料帮助学习，并处理我指定的课程任务。"

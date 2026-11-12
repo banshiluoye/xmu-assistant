@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact time / course / classroom columns, matching the default desktop layout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp" android:height="88dp" android:viewportWidth="350" android:viewportHeight="154">
+    <path android:fillColor="#FFFFFF" android:strokeColor="#D8E3EE" android:strokeWidth="1"
+        android:pathData="M16,1H334Q349,1 349,16V138Q349,153 334,153H16Q1,153 1,138V16Q1,1 16,1Z" />
+    <path android:fillColor="#123F70" android:pathData="M16,17h65v9h-65z M16,48h72v6h-72z M16,78h72v6h-72z M16,108h72v6h-72z" />
+    <path android:fillColor="#243C54" android:pathData="M108,46h108v9h-108z M108,76h94v9h-94z M108,106h110v9h-110z" />
+    <path android:fillColor="#7891AB" android:pathData="M259,19h73v6h-73z M241,48h80v6h-80z M241,78h72v6h-72z M241,108h85v6h-85z" />
+</vector>

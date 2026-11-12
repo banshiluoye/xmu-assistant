@@ -1,0 +1,587 @@
+package com.xmu.assistant
+
+import android.content.Context
+import android.os.Environment
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.Locale
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/**
+ * 候选端点记忆（与桌面端 utils.remember_good_endpoint/ordered_endpoints 对齐）：
+ * 上次成功的端点下次首选，省掉 1~5 个必败探测往返。进程级缓存即可。
+ */
+internal object EndpointMemory {
+    private val lastGood = mutableMapOf<String, String>()
+
+    fun ordered(purpose: String, candidates: List<String>): List<String> =
+        synchronized(lastGood) {
+            val good = lastGood[purpose]
+            when {
+                good == null || !candidates.contains(good) -> candidates
+                else -> listOf(good) + candidates.filterNot { it == good }
+            }
+        }
+
+    fun remember(purpose: String, endpoint: String) =
+        synchronized(lastGood) { lastGood[purpose] = endpoint }
+
+    fun reset() = synchronized(lastGood) { lastGood.clear() }
+}
+
+/**
+ * 直链课件扩展名全集（与桌面端 courseware.DIRECT_URL_EXTENSIONS 16 种对齐）：
+ * 下载分流（isDirectDownloadUrl）与页内「可直下」计数（isDirectCoursewareUrl）
+ * 共用同一来源，防清单漂移——此前 .7z/.mov/.m4v/.mp3/.m4a 只在下载侧生效、
+ * 计数侧算「入口」，汇总行与实际下载行为不一致。
+ */
+val DIRECT_COURSEWARE_EXTENSIONS: List<String> = listOf(
+    ".pdf", ".ppt", ".pptx", ".doc", ".docx", ".xls", ".xlsx", ".zip",
+    ".rar", ".7z", ".mp4", ".mov", ".m4v", ".mp3", ".m4a", ".m3u8",
+)
+
+class CoursewareClient private constructor(
+    private val context: Context?,
+    private val cookieHeader: String,
+    private val queryTransport: QueryHttpTransport,
+    private val executorFactory: (Int) -> ExecutorService,
+    private val fileDownloadTransport: FileDownloadTransport,
+    private val downloadDirectory: File?,
+) {
+    private val baseUrl = "https://lnt.xmu.edu.cn"
+
+    constructor(context: Context, cookieHeader: String) : this(
+        // applicationContext：client 会贯穿整个下载期（后台线程持引用），
+        // 持 Activity context 时转屏/关闭页面即泄漏整个 Activity 视图树
+        context = context.applicationContext,
+        cookieHeader = cookieHeader,
+        queryTransport = OkHttpQueryTransport(),
+        executorFactory = { size -> Executors.newFixedThreadPool(size) },
+        fileDownloadTransport = OkHttpFileDownloadTransport(),
+        downloadDirectory = null,
+    )
+
+    internal constructor(
+        cookieHeader: String,
+        queryTransport: QueryHttpTransport,
+        executorFactory: (Int) -> ExecutorService,
+        fileDownloadTransport: FileDownloadTransport = OkHttpFileDownloadTransport(),
+        downloadDirectory: File? = null,
+    ) : this(
+        context = null,
+        cookieHeader = cookieHeader,
+        queryTransport = queryTransport,
+        executorFactory = executorFactory,
+        fileDownloadTransport = fileDownloadTransport,
+        downloadDirectory = downloadDirectory,
+    )
+
+    fun fetchCourses(): List<CourseSummary> {
+        val endpoints = listOf(
+            "/api/my-courses?per_page=1000",
+            "/api/courses?role=student&per_page=1000",
+            "/api/courses?course_role=student&per_page=1000",
+            "/api/my/courses?per_page=1000",
+            "/api/courses?per_page=1000",
+            "/api/courses",
+        )
+        val errors = mutableListOf<String>()
+        // 端点记忆：上次成功的端点本次优先尝试（与桌面端对齐）
+        for (endpoint in EndpointMemory.ordered(ENDPOINT_PURPOSE_COURSES, endpoints)) {
+            try {
+                // 课程端点 403 可能是资源级无权限，不立即判会话过期；
+                // 只有全部端点都失败且其中出现过真会话失效（401/登录页重定向）才续登，
+                // 避免单个端点权限问题误触发 CAS 登录（风控红线）。
+                val payload = getJson(
+                    "$baseUrl$endpoint",
+                    NetworkOperation.COURSES,
+                    forbiddenMeansSessionExpired = false,
+                )
+                val rawCourses = unwrapList(payload, "courses", "data", "items", "list", "results")
+                val courses = rawCourses.mapNotNull { raw ->
+                    val obj = raw as? JSONObject ?: return@mapNotNull null
+                    val id = firstString(obj, "id", "course_id", "courseId", "cid", "uuid")
+                    val title = firstString(obj, "name", "title", "course_title", "course_name", "display_name")
+                    if (id.isBlank() || title.isBlank()) return@mapNotNull null
+                    val term = firstTerm(obj)
+                    CourseSummary(
+                        id = id,
+                        title = title,
+                        term = term,
+                        semesterCode = firstSemesterCode(obj, term),
+                    )
+                }
+                if (courses.isNotEmpty()) {
+                    EndpointMemory.remember(ENDPOINT_PURPOSE_COURSES, endpoint)
+                    return courses
+                }
+            } catch (error: MainSessionExpiredException) {
+                // 真会话失效（401/登录页重定向）已被 getJson 确认：立即上抛触发续登，
+                // 不再串行打满其余端点白等（与 fetchCourseware 行为一致）；
+                // 减少未认证状态下的多余请求，同样符合风控红线。
+                throw error
+            } catch (error: Throwable) {
+                errors.add("$endpoint: ${error.message}")
+            }
+        }
+        // 附上各端点失败原因：六个端点全挂时保留诊断信息（404 还是超时），便于排查
+        val detail = errors.takeIf { it.isNotEmpty() }?.joinToString("；")?.let { "（$it）" }.orEmpty()
+        error("当前无法读取课程，请稍后重试或重新登录$detail")
+    }
+
+    fun fetchCourseware(courseId: String): List<CoursewareUiItem> {
+        val endpoints = listOf(
+            "/api/course/$courseId/courseware-activities",
+            "/api/courses/$courseId/courseware-activities",
+            "/api/course/$courseId/activities",
+            "/api/courses/$courseId/activities",
+        )
+        val activitiesPayload = endpoints.firstNotNullOfOrNull { endpoint ->
+            try {
+                // 与 fetchCourses 同语义：端点级 403（资源无权限/防盗链）不判会话过期，
+                // 只有 401/登录页重定向才上抛触发续登，避免单课程权限问题带动 CAS 登录。
+                getJson("$baseUrl$endpoint", NetworkOperation.COURSEWARE, forbiddenMeansSessionExpired = false)
+            } catch (error: MainSessionExpiredException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+        } ?: error("当前无法读取课程课件，请稍后重试或重新登录")
+        val activities = unwrapList(activitiesPayload, "activities", "courseware_activities", "data", "items", "list")
+        if (activities.any { it is JSONObject && it.optRealString("module_id").isNotBlank() }) {
+            try {
+                val modules=unwrapList(getJson("$baseUrl/api/courses/$courseId/modules",NetworkOperation.COURSEWARE,false),"modules","data","items","list")
+                val names=mutableMapOf<String,String>();val sections=mutableMapOf<String,String>()
+                modules.filterIsInstance<JSONObject>().forEach {module->
+                    names[module.optRealString("id")]=firstString(module,"name","title")
+                    module.optJSONArray("syllabuses")?.let {array->for(i in 0 until array.length()) array.optJSONObject(i)?.let {section->sections[section.optRealString("id")]=firstString(section,"name","title")}}
+                }
+                activities.filterIsInstance<JSONObject>().forEach {activity->
+                    names[activity.optRealString("module_id")]?.let {activity.put("module_name",it)}
+                    sections[activity.optRealString("syllabus_id")]?.let {activity.put("syllabus_name",it)}
+                }
+            } catch(error:MainSessionExpiredException) {throw error} catch(_:Exception) { /* Keep the existing activity list when chapter metadata is unavailable. */ }
+        }
+        val queryableActivities = activities.mapIndexedNotNull { index, raw ->
+            val activity = raw as? JSONObject ?: return@mapIndexedNotNull null
+            val activityId = firstString(activity, "id")
+            val activityType = firstString(activity, "type")
+            if (activityId.isBlank() || activityType in setOf("exam", "homework")) return@mapIndexedNotNull null
+            index to activity
+        }
+        if (queryableActivities.isEmpty()) return emptyList()
+        val executor = executorFactory(minOf(MAX_PARALLEL_DETAILS, queryableActivities.size))
+        return try {
+            queryableActivities.map { (index, activity) ->
+                executor.submit<List<CoursewareUiItem>> {
+                    val activityId = firstString(activity, "id")
+                    try {
+                        val detail = getJson(
+                            "$baseUrl/api/activities/$activityId",
+                            NetworkOperation.COURSEWARE,
+                            forbiddenMeansSessionExpired = false,
+                        )
+                        itemsFromDetail(courseId, activity, detail)
+                    } catch (error: MainSessionExpiredException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        listOf(entryItem(courseId, activity, index, error.message.orEmpty()))
+                    }
+                }
+            }.flatMap { future ->
+                try {
+                    future.get()
+                } catch (error: ExecutionException) {
+                    // 与 boundedParallelMap 同一约定：统一 unwrap 出原始异常，
+                    // 否则上层按异常类型分类（会话/网络/格式）会失配
+                    throw error.cause ?: error
+                }
+            }
+        } catch (error: Throwable) {
+            // 体检报告 §6-OPT2：首个 future 失败即整批上抛，但此前已 submit 的其余任务
+            // 仍会逐个对（可能已失效的）会话发请求——会话过期瞬间就是几十个必败请求的
+            // 风暴 + 非守护线程滞留。shutdownNow 清空队列并中断在途任务。
+            executor.shutdownNow()
+            throw error
+        } finally {
+            executor.shutdown()
+        }
+    }
+
+    fun download(item: CoursewareUiItem): String {
+        val baseDirectory = downloadDirectory
+            ?: File(
+                // getExternalFilesDir 可返回 null（外部存储不可用）：File(null, child)
+                // 得相对路径，后续 mkdirs/写入失败抛难定位异常——回落内部私有目录
+                checkNotNull(context).getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    ?: checkNotNull(context).filesDir,
+                "xmu助手课件",
+            )
+        val directory = if(downloadDirectory!=null) baseDirectory else {
+            coursewareRelativeDirectories(item).fold(baseDirectory) {parent,segment->File(parent,segment)}
+        }
+        directory.mkdirs()
+        fun publish(path:String) {
+            if(context!=null && android.os.Build.VERSION.SDK_INT>=29) {
+                val file=File(path)
+                publishPublicDownload(context,file,coursewareRelativeDirectories(item))
+                file.delete()
+            }
+        }
+        return if (item.referenceId.isNotBlank()) {
+            val signed = getJson("$baseUrl/api/uploads/reference/${item.referenceId}/url", NetworkOperation.COURSEWARE, forbiddenMeansSessionExpired = false) as? JSONObject
+            val url = signed?.optRealString("url").orEmpty()
+            if (!url.startsWith("http")) error("平台未提供地址")
+            publish(downloadUrl(url, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item)))
+            COURSEWARE_STATUS_SUCCESS
+        } else if (isDirectDownloadUrl(item.sourceUrl)) {
+            publish(downloadUrl(item.sourceUrl, directory, item.filename.ifBlank { item.title }, coursewareResourceIdentity(item)))
+            COURSEWARE_STATUS_SUCCESS
+        } else {
+            val url = item.sourceUrl.ifBlank { "$baseUrl/course/${item.courseId}/learning-activity#/${item.activityId}" }
+            synchronized(FILE_ALLOCATION_LOCK) {
+                val target = availableFile(directory, "${item.title}.url")
+                target.writeText("[InternetShortcut]\nURL=$url\n", Charsets.UTF_8)
+                publish(target.absolutePath)
+            }
+            COURSEWARE_STATUS_ENTRY_SAVED
+        }
+    }
+
+    private fun itemsFromDetail(courseId: String, activity: JSONObject, detail: Any): List<CoursewareUiItem> {
+        val obj = detail as? JSONObject ?: return listOf(entryItem(courseId, activity, 0, "平台未提供地址"))
+        val uploads = obj.optJSONArray("uploads") ?: JSONArray()
+        val activityId = firstString(activity, "id")
+        val title = firstString(obj, "title", "name").ifBlank { firstString(activity, "title", "name").ifBlank { "未命名课件" } }
+        val type = readableType(firstString(obj, "type").ifBlank { firstString(activity, "type") })
+        val sourceUrl = findUrl(obj).ifBlank { "$baseUrl/course/$courseId/learning-activity#/$activityId" }
+        val moduleName = firstString(activity, "module_name", "syllabus_name", "chapter", "section")
+        if (uploads.length() == 0) {
+            return listOf(
+                CoursewareUiItem(
+                    id = activityId,
+                    courseId = courseId,
+                    activityId = activityId,
+                    title = title,
+                    filename = "",
+                    type = type,
+                    moduleName = moduleName,
+                syllabusName = activity.optRealString("syllabus_name"),
+                    sourceUrl = sourceUrl,
+                    downloadStatus = COURSEWARE_STATUS_AVAILABLE,
+                )
+            )
+        }
+        return (0 until uploads.length()).mapNotNull { index ->
+            val upload = uploads.optJSONObject(index) ?: return@mapNotNull null
+            // optRealString：显式 null 会被 optString 读成 "null" 字面量，拼进签名
+            // URL 必败（与 rollcall_id/number_code 同款陷阱）
+            val referenceId = upload.optRealString("reference_id")
+            CoursewareUiItem(
+                id = "$activityId-$index-${referenceId.ifBlank { upload.optRealString("id") }}",
+                courseId = courseId,
+                activityId = activityId,
+                title = title,
+                filename = firstString(upload, "name", "filename", "file_name").ifBlank { title },
+                type = upload.optRealString("type").takeIf { it.isNotBlank() }?.let(::readableType) ?: type,
+                moduleName = moduleName,
+                syllabusName = activity.optRealString("syllabus_name"),
+                referenceId = referenceId,
+                resourceId = upload.optRealString("id").ifBlank { referenceId },
+                sourceUrl = sourceUrl,
+                downloadStatus = COURSEWARE_STATUS_AVAILABLE,
+            )
+        }
+    }
+
+    private fun entryItem(courseId: String, activity: JSONObject, index: Int, reason: String): CoursewareUiItem {
+        val activityId = firstString(activity, "id").ifBlank { "activity-$index" }
+        return CoursewareUiItem(
+            id = activityId,
+            courseId = courseId,
+            activityId = activityId,
+            title = firstString(activity, "title", "name").ifBlank { "未命名课件" },
+            filename = "",
+            type = readableType(firstString(activity, "type").ifBlank { "入口" }),
+            moduleName = firstString(activity, "module_name", "syllabus_name", "chapter", "section"),
+            sourceUrl = findUrl(activity).ifBlank { "$baseUrl/course/$courseId/learning-activity#/$activityId" },
+            downloadStatus = COURSEWARE_STATUS_AVAILABLE,
+            failureReason = reason.takeIf { it.isNotBlank() }?.let { shortCoursewareError(it) }.orEmpty(),
+        )
+    }
+
+    private fun downloadUrl(url: String, directory: File, filename: String, resourceIdentity: String): String {
+        val (target, partial) = reserveDownloadFiles(directory, filename, resourceIdentity)
+        return try {
+            val headers = linkedMapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 13) Mobile Safari/537.36",
+                "Accept-Language" to "zh-CN,zh;q=0.9",
+            )
+            // 只对平台同源域名带会话 Cookie；签名/CDN 直链（第三方主机）不携带，
+            // 避免把登录 cookie 外泄给无关服务器（安全红线）。
+            // 同源判定按 URL host 解析比对，不用字符串前缀：lnt.xmu.edu.cn.evil.com
+            // 这类前缀伪装域也会 startsWith 命中，Cookie 会外泄给攻击者主机。
+            if (cookieHeader.isNotBlank() && isSameOriginAsBaseUrl(url)) headers["Cookie"] = cookieHeader
+            val result = fileDownloadTransport.download(
+                FileDownloadRequest(
+                    url = url,
+                    headers = headers,
+                    operation = NetworkOperation.DOWNLOAD,
+                    resourceIdentity = resourceIdentity,
+                ),
+                partial,
+            )
+            // 401 = 会话确定失效（触发续登）；403 = 平台拒绝（版权保护/防盗链/无权限），
+            // 与桌面端 courseware._download_url 分类对齐：CDN 防盗链 403 不应引发 CAS 续登风暴
+            if (result.code == 401) throw MainSessionExpiredException()
+            if (result.code == 403) error("课件下载被平台拒绝（无下载权限）")
+            if (result.code != 200 && result.code != 206) error("平台未返回可下载文件（HTTP ${result.code}）")
+            val contentType = result.contentType.lowercase()
+            // The transport deliberately leaves HTML/JSON/XHTML challenge
+            // payloads out of the .part file.  Treat all of them as failures
+            // here too; otherwise an empty placeholder (or an old partial)
+            // could be renamed as a successful download.
+            if ("text/html" in contentType ||
+                "application/json" in contentType ||
+                "application/xhtml" in contentType
+            ) {
+                error("网络失败")
+            }
+            check(partial.renameTo(target)) { "课件文件保存失败" }
+            DownloadResumeMetadata.sidecar(partial).delete()
+            target.absolutePath
+        } catch (error: Throwable) {
+            // 保留 .part：已下载字节是断点续传的依据（传输层失败分支不写脏数据）；
+            // 原实现失败即删，续传形同虚设。
+            throw error
+        } finally {
+            // 成功（已 rename）/失败（保留 .part 待续传）都释放进程内占位，
+            // 让后续重试可复用同名断点
+            releaseReservation(partial)
+        }
+    }
+
+    /** URL 是否与 baseUrl 同源；Cookie 只发往相同 scheme/host/有效端口。 */
+    private fun isSameOriginAsBaseUrl(url: String): Boolean = runCatching {
+        val candidate = java.net.URL(url)
+        val base = java.net.URL(baseUrl)
+        candidate.protocol.equals(base.protocol, ignoreCase = true) &&
+            candidate.host.equals(base.host, ignoreCase = true) &&
+            candidate.effectivePort() == base.effectivePort()
+    }.getOrDefault(false)
+
+    private fun getJson(
+        url: String,
+        operation: NetworkOperation,
+        forbiddenMeansSessionExpired: Boolean = true,
+    ): Any {
+        val headers = linkedMapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 13) Mobile Safari/537.36",
+            "Accept-Language" to "zh-CN,zh;q=0.9",
+            "Accept" to "application/json, text/plain, */*",
+        )
+        if (cookieHeader.isNotBlank()) headers["Cookie"] = cookieHeader
+        val response = queryTransport.execute(
+            QueryHttpRequest(
+                url = url,
+                method = "GET",
+                headers = headers,
+                operation = operation,
+            ),
+        )
+        if (response.code == 401 || (response.code == 403 && forbiddenMeansSessionExpired)) {
+            throw MainSessionExpiredException()
+        }
+        // 会话过期时平台返回 302 跳身份域（query 客户端 followRedirects=false），
+        // 与探活同一判定；否则误分类为「网络失败」，续登机制永不触发
+        if (response.code in 300..399 && isIdentityRedirect(response.url, response.location)) {
+            throw MainSessionExpiredException()
+        }
+        if (response.code !in 200..299) error("网络失败")
+        if (isKnownLoginForm(response.body)) throw MainSessionExpiredException()
+        // 2xx 但非 JSON（空 body/HTML 错误页）：解析异常统一归为「网络失败」，
+        // 否则 JSONException 会从 download() 等无兜底调用点逃逸
+        return runCatching {
+            if (response.body.trimStart().startsWith("[")) JSONArray(response.body) else JSONObject(response.body)
+        }.getOrElse { error("网络失败") }
+    }
+
+    private fun unwrapList(value: Any, vararg keys: String): List<Any> {
+        return when (value) {
+            is JSONArray -> (0 until value.length()).mapNotNull { value.opt(it) }
+            is JSONObject -> {
+                for (key in keys) {
+                    val nested = value.opt(key)
+                    val list = if (nested != null) unwrapList(nested, *keys) else emptyList()
+                    if (list.isNotEmpty()) return list
+                }
+                value.keys().asSequence()
+                    .mapNotNull { key -> value.opt(key) }
+                    .firstNotNullOfOrNull { nested -> unwrapList(nested, *keys).takeIf { it.isNotEmpty() } }
+                    ?: emptyList()
+            }
+            else -> emptyList()
+        }
+    }
+
+    private fun firstString(obj: JSONObject, vararg keys: String): String =
+        keys.firstNotNullOfOrNull { key -> obj.optRealString(key).takeIf { it.isNotBlank() } } ?: ""
+
+    private fun firstTerm(obj: JSONObject): String {
+        val year = obj.opt("academic_year")
+        if (year is JSONObject) return firstString(year, "name", "code", "id")
+        return obj.optRealString("academic_year").ifBlank {
+            obj.optRealString("term_name").ifBlank {
+                obj.optRealString("semester_name").ifBlank { obj.optRealString("term") }
+            }
+        }
+    }
+
+    private fun firstSemesterCode(obj: JSONObject, term: String): String {
+        val semester = obj.opt("semester")
+        if (semester is JSONObject) return firstString(semester, "code", "id", "name")
+        val raw = obj.optRealString("semester").ifBlank { obj.optRealString("semester_code") }
+        return raw.ifBlank { term }
+    }
+
+    private fun findUrl(value: Any?): String {
+        return when (value) {
+            is String -> value.takeIf { it.startsWith("http://") || it.startsWith("https://") }.orEmpty()
+            is JSONArray -> (0 until value.length()).asSequence().map { findUrl(value.opt(it)) }.firstOrNull { it.isNotBlank() }.orEmpty()
+            is JSONObject -> {
+                val keys = listOf("url", "source_url", "link", "href", "video_url", "play_url", "resource_url", "download_url", "external_url", "preview_url")
+                keys.asSequence().map { findUrl(value.opt(it)) }.firstOrNull { it.isNotBlank() }
+                    ?: value.keys().asSequence().map { findUrl(value.opt(it)) }.firstOrNull { it.isNotBlank() }.orEmpty()
+            }
+            else -> ""
+        }
+    }
+
+    private fun readableType(raw: String): String {
+        val lowered = raw.lowercase()
+        return when {
+            "video" in lowered -> "视频"
+            "link" in lowered || "page" in lowered || "html" in lowered || "h5" in lowered || "scorm" in lowered -> "入口"
+            else -> "资料"
+        }
+    }
+
+    private fun isDirectDownloadUrl(url: String): Boolean = isDirectCoursewareUrl(url)
+
+    private fun availableFile(directory: File, rawName: String): File {
+        val target0 = File(directory, sanitizedFileName(rawName))
+        var target = target0
+        val dot = target.name.lastIndexOf('.')
+        val stem = if (dot > 0) target.name.substring(0, dot) else target.name
+        val suffix = if (dot > 0) target.name.substring(dot) else ""
+        var index = 2
+        while (target.exists() ||
+            File(target.parentFile, target.name + ".part").exists() ||
+            File(target.parentFile, target.name + ".part.meta").exists() ||
+            File(target.parentFile, target.name + ".part.meta.tmp").exists() ||
+            downloadReservationPaths(target).any { pathKey(it) in claimedDownloadPaths }
+        ) {
+            target = File(directory, "$stem ($index)$suffix")
+            index += 1
+        }
+        return target
+    }
+
+    private fun sanitizedFileName(rawName: String): String =
+        rawName.replace(Regex("""[<>:"/\\|?*\u0000-\u001f]"""), "_")
+            .trim()
+            .trimEnd('.')
+            .ifBlank { "courseware" }
+            .take(120)
+
+    private fun reserveDownloadFiles(directory: File, rawName: String, resourceIdentity: String? = null): Pair<File, File> {
+        // 有限重试：目录不可写（磁盘满/权限/文件系统错误）时 createNewFile 会一直失败，
+        // 若 while(true) 会永久忙等并持有锁；限次后抛错让下载走失败分支。
+        var attempts = 0
+        val base = File(directory, sanitizedFileName(rawName))
+        val dot = base.name.lastIndexOf('.')
+        val stem = if (dot > 0) base.name.substring(0, dot) else base.name
+        val suffix = if (dot > 0) base.name.substring(dot) else ""
+        while (attempts < 50) {
+            attempts += 1
+            val target = if (attempts == 1) base else File(directory, "$stem ($attempts)$suffix")
+            // Reuse a numbered as well as the primary partial only when its recorded owner matches.
+            // Claim target + all metadata paths together so another valid filename cannot overwrite
+            // this download's sidecar while it is being written.
+            val allocated = synchronized(FILE_ALLOCATION_LOCK) {
+                val partial = File(target.parentFile, target.name + ".part")
+                val sidecar = DownloadResumeMetadata.sidecar(partial)
+                val sidecarTemp = File(sidecar.parentFile, sidecar.name + ".tmp")
+                val paths = downloadReservationPaths(target)
+                if (target.exists() || paths.any { pathKey(it) in claimedDownloadPaths }) {
+                    null
+                } else if (partial.exists()) {
+                    val ownerMatches = resourceIdentity == null ||
+                        DownloadResumeMetadata.read(partial)?.resourceIdentity == resourceIdentity
+                    if (!ownerMatches || sidecarTemp.exists()) {
+                        null
+                    } else {
+                        paths.forEach { claimedDownloadPaths += pathKey(it) }
+                        target to partial
+                    }
+                } else if (sidecar.exists() || sidecarTemp.exists() || !partial.createNewFile()) {
+                    null
+                } else {
+                    paths.forEach { claimedDownloadPaths += pathKey(it) }
+                    target to partial
+                }
+            }
+            if (allocated != null) return allocated
+        }
+        error("课件文件目录不可写，请检查存储空间")
+    }
+
+    private fun releaseReservation(partial: File) {
+        val target = File(partial.parentFile, partial.name.removeSuffix(".part"))
+        synchronized(FILE_ALLOCATION_LOCK) { downloadReservationPaths(target).forEach { claimedDownloadPaths.remove(pathKey(it)) } }
+    }
+
+    private fun downloadReservationPaths(target: File): List<File> {
+        val partial = File(target.parentFile, target.name + ".part")
+        val sidecar = DownloadResumeMetadata.sidecar(partial)
+        return listOf(target, partial, sidecar, File(sidecar.parentFile, sidecar.name + ".tmp"))
+    }
+
+    private fun pathKey(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
+
+    private companion object {
+        const val MAX_PARALLEL_DETAILS = 4
+        const val ENDPOINT_PURPOSE_COURSES = "courses"
+        val FILE_ALLOCATION_LOCK = Any()
+
+        /** In-flight reservations cover final target, partial, sidecar and sidecar temp paths. */
+        val claimedDownloadPaths = mutableSetOf<String>()
+    }
+}
+
+/** Stable business identity: never bind a partial to a renewable signed URL. */
+internal fun coursewareResourceIdentity(item: CoursewareUiItem): String =
+    if (item.referenceId.isNotBlank()) {
+        JSONArray(listOf("reference", item.courseId, item.activityId, item.referenceId)).toString()
+    } else if (item.resourceId.isNotBlank()) {
+        JSONArray(listOf("item", item.courseId, item.activityId, item.resourceId)).toString()
+    } else {
+        JSONArray(
+            listOf("url", item.courseId, item.activityId, item.sourceUrl.substringBefore('#'), item.filename),
+        ).toString()
+    }
+
+/** True when the URL path ends in a supported downloadable extension. */
+fun isDirectCoursewareUrl(url: String): Boolean = runCatching {
+    // 用 OkHttp 同样的 URL 解析规则，兼容空格和中文等可编码链接。
+    val path = url.toHttpUrlOrNull()?.encodedPath.orEmpty().lowercase()
+    DIRECT_COURSEWARE_EXTENSIONS.any { path.endsWith(it) }
+}.getOrDefault(false)
+
+private fun java.net.URL.effectivePort(): Int =
+    if (port != -1) port else if (protocol.equals("https", ignoreCase = true)) 443 else 80

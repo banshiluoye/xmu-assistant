@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+.gradle-home/
+.tmp/
+build/
+app/build/
+local.properties
+
+# Android Studio / IDE
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本地日志与截图（Codex 调试产物）
+*.log
+*.log.err
+*.xml.bak
+
+# 测试临时数据
+app/src/test/resources/*.tmp
+
+# 签名通过本机环境变量提供。
+keystore/
+*.keystore
+*.jks

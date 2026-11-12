@@ -1,0 +1,124 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+}
+
+android {
+    namespace = "com.xmu.assistant"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.xmu.assistant"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 50
+        versionName = "1.10.0"
+        buildConfigField("boolean", "NETWORK_METRICS", "false")
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += setOf("META-INF/NOTICE.md", "META-INF/LICENSE.md")
+            // R8 removes these unused post-quantum algorithms, but retains their large
+            // parameter resources. PDF text extraction and our TLS/storage do not use them.
+            excludes += setOf(
+                "org/bouncycastle/pqc/crypto/picnic/lowmc.properties",
+                "org/bouncycastle/pqc/crypto/sike/p434.properties",
+                "org/bouncycastle/pqc/crypto/sike/p503.properties",
+                "org/bouncycastle/pqc/crypto/sike/p610.properties",
+                "org/bouncycastle/pqc/crypto/sike/p751.properties",
+            )
+        }
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric 运行 Compose UI 测试需要 Android 资源
+            isIncludeAndroidResources = true
+            all {
+                // JavaMail 1.6.7's JVM hostname checker reflects into InetAddress on JDK 17.
+                // Open only the unit-test worker module; Android production runtime is unchanged.
+                it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED")
+            }
+        }
+    }
+
+    signingConfigs {
+        // Build machines can supply an existing signing key outside the public source tree.
+        // With no supplied key, AGP uses the machine's standard debug keystore.
+        getByName("debug") {
+            val supplied = providers.environmentVariable("XMU_ANDROID_KEYSTORE").orNull
+            if (!supplied.isNullOrBlank()) {
+                storeFile = file(supplied)
+                storePassword = providers.environmentVariable("XMU_ANDROID_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("XMU_ANDROID_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("XMU_ANDROID_KEY_PASSWORD").get()
+            }
+        }
+    }
+
+    buildTypes {
+        create("networkBenchmark") {
+            initWith(getByName("debug"))
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "NETWORK_METRICS", "true")
+        }
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        getByName("release") {
+            // 沿用现有固定签名：保证已安装用户覆盖升级（install -r）不丢加密登录数据
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    implementation(libs.pdfbox.android)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.android.mail)
+    implementation(libs.android.activation)
+    implementation(libs.okhttp)
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+    testImplementation(libs.mockwebserver)
+    // Compose UI 测试（Robolectric 在 JVM 上渲染，无需模拟器）
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    // Robolectric 的 Compose UI 测试（ScheduleWeekGridUiTest/ThemeUiTest)也依赖此 debug manifest
+    // 提供可解析的 ComponentActivity，不能删
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // initWith(debug) 复制构建设置，不继承 debugImplementation 依赖。
+    // 基准变体也运行 src/test 中的完整 Compose/Robolectric 测试。
+    add("networkBenchmarkImplementation", libs.androidx.compose.ui.test.manifest)
+}

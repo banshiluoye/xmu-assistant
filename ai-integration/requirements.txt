@@ -1,0 +1,5 @@
+# Optional AI bridge only; never a desktop GUI startup dependency.
+mcp==1.30.0
+pypdf==6.21.4
+requests>=2.31,<3
+pywin32>=306; sys_platform == "win32"

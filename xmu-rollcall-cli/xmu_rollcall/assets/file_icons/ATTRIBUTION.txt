@@ -1,0 +1,5 @@
+Material Icon Theme, Copyright (c) 2025 Material Extensions
+https://github.com/material-extensions/vscode-material-icon-theme
+MIT, see LICENSE-Material-Icon-Theme.txt
+Selected SVG assets rendered to transparent PNG at 24/48/72 px; shapes and colors unchanged.
+folder.svg and folder-open.svg are generated assets from the official material-icon-theme npm package; other SVGs from the official repository.
