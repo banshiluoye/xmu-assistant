@@ -9,6 +9,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -23,6 +25,13 @@ import kotlin.concurrent.thread
 class RollcallMonitorService : Service() {
     @Volatile private var workerToken: Long? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var networkGeneration = 0L
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            networkGeneration += 1
+        }
+    }
+    private var networkCallbackRegistered = false
 
     // 第三方推送专用单线程执行器：签到事件可能短时集中到达，原先每个事件裸起
     // 一个 daemon 线程，线程数随事件数无界增长；推送发送本身慢（各自 15s 超时）
@@ -61,6 +70,9 @@ class RollcallMonitorService : Service() {
         } else {
             startForeground(FOREGROUND_NOTIFICATION_ID, foregroundNotification())
         }
+        networkCallbackRegistered = runCatching {
+            getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        }.isSuccess
     }
 
     /** dataSync 超时兜底（API 35 回调）：正常路径 API 35+ 已用 specialUse（无超时）
@@ -95,6 +107,9 @@ class RollcallMonitorService : Service() {
 
     override fun onDestroy() {
         workerToken?.let(monitorWorkerCoordinator::requestInvalidate)
+        if (networkCallbackRegistered) runCatching {
+            getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
+        }
         // 停止接收新推送任务；在途/排队中的发送走完（daemon 线程不阻塞进程退出）
         thirdPartyPushExecutor.shutdown()
         super.onDestroy()
@@ -109,10 +124,11 @@ class RollcallMonitorService : Service() {
      * 分段可中断等待：每 500ms 检查一次监控是否仍在运行，让「停止监控」立即生效，
      * 而不是等满整个轮询间隔（最长 300s）。等待本身不发起任何网络请求。
      */
-    private fun awaitInterruptible(token: Long, settings: AssistantSettings, totalMillis: Long) {
+    private fun awaitInterruptible(token: Long, settings: AssistantSettings, totalMillis: Long, afterNetwork: Long? = null) {
         val deadline = SystemClock.elapsedRealtime() + totalMillis
         while (SystemClock.elapsedRealtime() < deadline) {
             if (!isMonitorRunActive(token, settings)) return
+            if (afterNetwork != null && afterNetwork != networkGeneration) return
             try {
                 Thread.sleep(500)
             } catch (_: InterruptedException) {
@@ -146,6 +162,7 @@ class RollcallMonitorService : Service() {
         var lastHeartbeat: Long? = null
         var previousSleepOffset = SystemClock.elapsedRealtime() - SystemClock.uptimeMillis()
         var previousPollAt = SystemClock.elapsedRealtime()
+        val networkRecovery = MonitorNetworkRecovery()
         MonitorDiagnostics.record(this, "monitor_start batteryExempt=${power.isIgnoringBatteryOptimizations(packageName)}")
         try {
             while (isMonitorRunActive(token, settings)) {
@@ -154,6 +171,8 @@ class RollcallMonitorService : Service() {
                 val rollcallSettings = settings.rollcall()
                 val intervalSeconds = rollcallSettings.pollIntervalSeconds.coerceIn(1, 300)
                 val now = SystemClock.elapsedRealtime()
+                val networkAtPollStart = networkGeneration
+                var readSucceeded = false
                 val sleepOffset = now - SystemClock.uptimeMillis()
                 val suspended = sleepOffset - previousSleepOffset
                 if (suspended >= 2000L) {
@@ -170,6 +189,7 @@ class RollcallMonitorService : Service() {
                     val coordinateStore = RadarCoordinateStore(this)
                     val engine = RollcallEngine(
                         liveCookie,
+                        statusTransport = OkHttpQueryTransport(XmuHttpClients.monitorQuery),
                         radarCoordinateProvider = { event ->
                             runCatching {
                                 val snapshot=loadScheduleSnapshotFromFile(this)
@@ -183,6 +203,9 @@ class RollcallMonitorService : Service() {
                     )
                     // 同一轮详情 GET 同时供进度门槛、本人状态和数字码使用。
                     val allEvents = engine.pollWithDetails(settings.username)
+                    readSucceeded = true
+                    networkRecovery.reset()
+                    getSystemService(NotificationManager::class.java).cancel(MONITOR_NETWORK_NOTIFICATION_ID)
                     if (allEvents.isNotEmpty() || lastHeartbeat?.let { now - it >= 60_000L } != false) {
                         val pending = allEvents.filter { !it.isExpired && it.remainingSeconds != 0L }
                         MonitorDiagnostics.record(this, "poll_ok events=${allEvents.size} active=${pending.size} " +
@@ -262,6 +285,8 @@ class RollcallMonitorService : Service() {
                         else intervalSeconds
                     awaitInterruptible(token, settings, waitSeconds * 1000L)
                 } catch (error: MainSessionExpiredException) {
+                    networkRecovery.reset()
+                    getSystemService(NotificationManager::class.java).cancel(MONITOR_NETWORK_NOTIFICATION_ID)
                     if (!isMonitorRunActive(token, settings)) return
                     if (settings.username != account) return
                     if (settings.cookieHeader != cookieSnapshot) continue
@@ -287,6 +312,22 @@ class RollcallMonitorService : Service() {
                 } catch (error: Exception) {
                     if (!isMonitorRunActive(token, settings)) return
                     MonitorDiagnostics.record(this, "poll_error reason=${error.javaClass.simpleName}")
+                    val networkFailure = if (readSucceeded) null else monitorNetworkFailure(error)
+                    if (networkFailure != null) {
+                        val alert = networkRecovery.recordFailure(SystemClock.elapsedRealtime())
+                        if (!monitorWorkerCoordinator.runIfCurrent(token, settings.monitorDesired) {
+                                settings.recordMonitorFailure(networkFailure.message)
+                                updateForegroundNotification(intervalSeconds)
+                                if (alert) notifyMonitorProblem(
+                                    networkFailure.message.removeSuffix("，正在重试") + "。监控会继续重试，请检查手机网络。",
+                                    notificationId = MONITOR_NETWORK_NOTIFICATION_ID,
+                                )
+                            }
+                        ) return
+                        awaitInterruptible(token, settings, networkRecovery.retryDelayMillis(), networkAtPollStart)
+                        continue
+                    }
+                    networkRecovery.reset()
                     val message = friendlyMessage(error)
                     if (!monitorWorkerCoordinator.runIfCurrent(token, settings.monitorDesired) {
                             settings.recordMonitorFailure(message)
@@ -374,12 +415,12 @@ class RollcallMonitorService : Service() {
     internal fun createNotificationChannels() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "虾大助手后台监控", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, "厦大助手后台监控", NotificationManager.IMPORTANCE_LOW)
         )
         // 旧通道已创建为 LOW，Android 不允许应用直接提升其重要性。提醒使用独立 ID，
         // 常驻服务仍保持安静；后续创建不会覆盖用户对提醒通道的静音/禁用选择。
         manager.createNotificationChannel(
-            NotificationChannel(REMINDER_CHANNEL_ID, "虾大助手签到与监控提醒", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(REMINDER_CHANNEL_ID, "厦大助手签到与监控提醒", NotificationManager.IMPORTANCE_DEFAULT)
         )
     }
 
@@ -398,7 +439,7 @@ class RollcallMonitorService : Service() {
         // 本地通知（快速、无网络）：留在 gate 互斥区内，保证登出/暂停时不会漏发本地提醒
         val localPosted = postReminderNotification(event.id.hashCode(), notify.systemEnabled) {
             Notification.Builder(this, REMINDER_CHANNEL_ID)
-                .setContentTitle("虾大助手 签到提醒")
+                .setContentTitle("厦大助手 签到提醒")
                 .setContentText("${event.courseTitle} / ${event.type}")
                 .setStyle(Notification.BigTextStyle().bigText(rollcallNotificationBody(event, actionUrl)))
                 .setSmallIcon(R.drawable.ic_notification)
@@ -418,13 +459,13 @@ class RollcallMonitorService : Service() {
                 // token/授权码失效后该通道会长期静默死亡，无日志则完全无法察觉。
                 if (notify.pushPlusEnabled) {
                     runCatching {
-                        PushPlusSender(notify.pushPlusToken).send("虾大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
+                        PushPlusSender(notify.pushPlusToken).send("厦大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
                     }.onFailure { Log.w(TAG, "PushPlus 推送失败：${it.message}", it) }
                 }
                 if (notify.qqMailEnabled) {
                     runCatching {
                         QQMailSender(notify.qqMailSender, notify.qqMailPassword, notify.qqMailRecipient, notify.qqMailPorts)
-                            .send("虾大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
+                            .send("厦大助手 签到提醒", rollcallNotificationBody(event, actionUrl))
                     }.onFailure { Log.w(TAG, "QQ 邮箱推送失败：${it.message}", it) }
                 }
             }
@@ -437,9 +478,10 @@ class RollcallMonitorService : Service() {
     internal fun notifyMonitorProblem(
         message: String,
         systemEnabled: Boolean = AssistantSettings(this).notifications().systemEnabled,
-    ): Boolean = postReminderNotification(MONITOR_PROBLEM_NOTIFICATION_ID, systemEnabled) {
+        notificationId: Int = MONITOR_PROBLEM_NOTIFICATION_ID,
+    ): Boolean = postReminderNotification(notificationId, systemEnabled) {
         Notification.Builder(this, REMINDER_CHANNEL_ID)
-            .setContentTitle("虾大助手 后台监控异常")
+            .setContentTitle("厦大助手 后台监控异常")
             .setContentText(message)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
@@ -485,7 +527,7 @@ class RollcallMonitorService : Service() {
             "监控运行中 · 最近检查：$lastCheck · 间隔 ${intervalSeconds ?: settings.rollcall().pollIntervalSeconds} 秒"
         }
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("虾大助手")
+            .setContentTitle("厦大助手")
             .setContentText(status ?: text)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
@@ -529,6 +571,7 @@ class RollcallMonitorService : Service() {
         private const val REMINDER_CHANNEL_ID = "xmu_assistant_rollcall_reminders"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
         private const val MONITOR_PROBLEM_NOTIFICATION_ID = 1002
+        private const val MONITOR_NETWORK_NOTIFICATION_ID = 1003
         private const val ERROR_NOTIFY_THRESHOLD = 3
         private const val MONITOR_WAKE_TIMEOUT_MILLIS = 10 * 60 * 1000L
         private const val SESSION_RENEWAL_COOLDOWN_MILLIS = 5 * 60 * 1000L

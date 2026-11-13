@@ -14,7 +14,9 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -343,17 +345,22 @@ internal fun MainScreen(
         }
         AppBackNavigation(page, onSelected = onModuleEntered)
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .safeDrawingPadding()
                     .imePadding(),
             ) {
+                val wideNavigation = useTabletNavigation(maxWidth.value) && maxHeight >= 430.dp
+                val wideWorkspace = maxWidth >= 840.dp
+                Row(Modifier.fillMaxSize()) {
+                if (wideNavigation) AppNavigationRail(page, onModuleEntered)
+                Box(Modifier.weight(1f).fillMaxHeight()) {
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .widthIn(max = 760.dp)
+                        .widthIn(max = if (wideWorkspace && page == "课表") 1400.dp else 760.dp)
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                         .padding(horizontal = 13.dp, vertical = 6.dp),
@@ -368,7 +375,7 @@ internal fun MainScreen(
                         onBack = { onModuleEntered(parentPage(page)) },
                         onLogExport = {
                             val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                            runCatching { exportDiagnostics.launch("虾大助手_安卓日志_$stamp.txt") }
+                            runCatching { exportDiagnostics.launch("厦大助手_安卓日志_$stamp.txt") }
                                 .onFailure { show("无法打开系统保存窗口") }
                         },
                     )
@@ -453,6 +460,7 @@ internal fun MainScreen(
                                         "课表" -> SchedulePage(
                                             owner = username,
                                             onLocalScheduleChanged = { scheduleEditRevision++ },
+                                            sideDetails = wideWorkspace,
                                             entries = schedule.entries,
                                             termCode = schedule.termCode,
                                             updatedAtMillis = schedule.updatedAtMillis,
@@ -690,12 +698,14 @@ internal fun MainScreen(
                     else -> ToastSeverity.INFO
                 }
                 if (activeToast.isNotBlank()) ToastBar(activeToast, severity = activeSeverity)
-                if (!keyboardVisible) AppNavigationBar(
+                if (!wideNavigation && !keyboardVisible) AppNavigationBar(
                     selected = page,
                     notificationSettings = notificationSettings,
                     downloadingCount = downloadingCount,
                     onSelected = onModuleEntered,
                 )
+            }
+            }
             }
 
             if (widgetGuideOpen) {

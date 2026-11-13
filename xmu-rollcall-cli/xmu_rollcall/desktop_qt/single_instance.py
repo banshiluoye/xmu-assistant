@@ -72,7 +72,7 @@ def raise_existing_instance_window() -> None:
     except ImportError:
         return
     try:
-        hwnd = win32gui.FindWindow(None, MAIN_WINDOW_TITLE)
+        hwnd = win32gui.FindWindow(None, "厦大助手") or win32gui.FindWindow(None, MAIN_WINDOW_TITLE)
         if not hwnd:
             return
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)

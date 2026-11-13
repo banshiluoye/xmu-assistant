@@ -45,4 +45,21 @@ class SchedulePageUiTest {
         composeRule.onNodeWithText("A101").assertIsDisplayed()
         composeRule.onNodeWithText("周日").assertIsDisplayed()
     }
+
+    @Config(qualifiers = "w960dp-h700dp-mdpi")
+    @Test fun `wide timetable shows selected course details alongside the week`() {
+        val today = LocalDate.now()
+        val monday = today.minusDays(today.dayOfWeek.value - 1L)
+        val calendar = XmuAcademicCalendar("20261", "2026-2027", "第一学期", monday, monday.plusWeeks(18))
+        val course = XmuScheduleEntry(2, 1, 2, 800, 940, "合成课程", "A101", "合成教师", "1-16周", "20261")
+        composeRule.setContent {
+            XmuMobileTheme {
+                SchedulePage(listOf(course), "20261", 0, false, "", true, {},
+                    inferredCalendar = calendar, sideDetails = true)
+            }
+        }
+        composeRule.onNodeWithText("合成课程").performClick()
+        composeRule.onNodeWithText("周日").assertIsDisplayed()
+        composeRule.onNodeWithText("教师：合成教师").assertIsDisplayed()
+    }
 }

@@ -128,6 +128,7 @@ fun SchedulePage(
     manualWeek: Int = 0,
     owner: String = "",
     onLocalScheduleChanged: () -> Unit = {},
+    sideDetails: Boolean = false,
 ) {
     val today = LocalDate.now()
     val context = LocalContext.current
@@ -267,13 +268,12 @@ fun SchedulePage(
         }
     }
 
-    selectedCourse?.let { group ->
+    val courseDetails: @Composable (XmuScheduleGroup) -> Unit = { group ->
         val base = selectedBaseCourse ?: group
         fun closeDetails() {
             selectedCourse = null
             selectedBaseCourse = null
         }
-        ModalBottomSheet(onDismissRequest = ::closeDetails, containerColor = MaterialTheme.colorScheme.surface) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
                 ScheduleCourseDetails(
                     group = group,
@@ -293,6 +293,11 @@ fun SchedulePage(
                     },
                 )
             }
+    }
+    if (!sideDetails) selectedCourse?.let { group ->
+        ModalBottomSheet(onDismissRequest = { selectedCourse = null; selectedBaseCourse = null },
+            containerColor = MaterialTheme.colorScheme.surface) {
+            courseDetails(group)
         }
     }
     management?.let { mode ->
@@ -312,10 +317,23 @@ fun SchedulePage(
         if (entries.isEmpty() && weekGroups.isEmpty()) {
             Box(Modifier.weight(1f)) { EmptyState(if(loggedIn) "暂无课表" else "请先登录", "点击刷新读取课表，也可以从更多添加临时课程。") }
         } else if (viewMode==ScheduleViewMode.WEEK) {
-            ScheduleCompactWeekGrid(weekGroups,selectedWeekStart,selectedIsCurrent,todayWeekday,nowValue,::selectCourseAndReveal,Modifier.weight(1f))
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScheduleCompactWeekGrid(weekGroups, selectedWeekStart, selectedIsCurrent, todayWeekday, nowValue,
+                    ::selectCourseAndReveal, Modifier.weight(1f))
+                if (sideDetails) selectedCourse?.let { group ->
+                    Surface(Modifier.width(260.dp).fillMaxSize(), shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface) { courseDetails(group) }
+                }
+            }
         } else {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                ScheduleAgendaView(weekGroups,selectedDay,{selectedDay=it},selectedIsCurrent,todayWeekday,nowValue,::selectCourseAndReveal)
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    ScheduleAgendaView(weekGroups,selectedDay,{selectedDay=it},selectedIsCurrent,todayWeekday,nowValue,::selectCourseAndReveal)
+                }
+                if (sideDetails) selectedCourse?.let { group ->
+                    Surface(Modifier.width(260.dp).fillMaxSize(), shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface) { courseDetails(group) }
+                }
             }
         }
         ScheduleWeekNavigator(selectedWeek, totalWeeks, academicWeek.week, ::changeWeek)

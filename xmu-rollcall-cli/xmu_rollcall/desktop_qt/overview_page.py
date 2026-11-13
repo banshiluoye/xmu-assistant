@@ -83,7 +83,7 @@ class OverviewPageMixin:
             )
         identity_title_box = QVBoxLayout()
         identity_title_box.setSpacing(2)
-        identity_title = QLabel("虾大助手")
+        identity_title = QLabel("厦大助手")
         identity_title.setObjectName("IdentityTitle")
         identity_subtitle = QLabel("课程与学习助手")
         identity_subtitle.setObjectName("IdentitySubtitle")

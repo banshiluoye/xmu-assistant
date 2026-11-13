@@ -7,6 +7,7 @@
          本应用不在 Play 上架，specialUse 无需审核；API 29-34 仍走 dataSync（无超时）。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 现场采点仅在用户主动点击时读取一次位置；保存前转换为平台使用的 GCJ-02。 -->

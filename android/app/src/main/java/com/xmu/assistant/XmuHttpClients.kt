@@ -54,6 +54,9 @@ internal object XmuHttpClients {
         .callTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    // Read-only monitoring can try IPv6 when the carrier's IPv4 route fails.
+    val monitorQuery: OkHttpClient = query.newBuilder().dns(Ipv4FirstDns()).build()
+
     // 下载客户端关闭自动重定向：签名地址的同源 302 可能跳第三方 CDN，
     // OkHttp 跨主机跟随会保留手动附加的 Cookie 头（外泄会话凭据）。
     // 重定向由 FileDownloadTransport 手动逐跳跟随：同源保留 Cookie，跨主机剥离。

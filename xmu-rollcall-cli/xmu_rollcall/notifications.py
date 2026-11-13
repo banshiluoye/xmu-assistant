@@ -1,4 +1,4 @@
-"""Notification helpers for 虾大助手."""
+"""Notification helpers for 厦大助手."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def build_rollcall_notification(event, action_url: str = "") -> NotificationMess
     ]
     if action_url:
         lines.append(f"打开：{action_url}")
-    return NotificationMessage("虾大助手 签到提醒", "\n".join(lines), action_url)
+    return NotificationMessage("厦大助手 签到提醒", "\n".join(lines), action_url)
 
 
 def notification_provider_status(settings: dict) -> dict[str, str]:

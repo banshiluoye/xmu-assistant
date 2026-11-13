@@ -7,7 +7,7 @@
 
 这是基于 [democard/xmu_assistant 1.8.4](https://github.com/democard/xmu_assistant/tree/v1.8.4) 的个人魔改版。原作者提供了 Windows、Android、签到监控和教务查询的基础。我按自己的日常学习流程，重新做了待办、作业、课件、手机课表和 AI 接入。感谢上游作者。
 
-[查看正式发布](https://github.com/banshiluoye/xmu-assistant/releases)
+[下载 1.10.1](https://github.com/banshiluoye/xmu-assistant/releases/tag/v1.10.1)
 </div>
 
 ## 相比上游改了什么
@@ -17,19 +17,35 @@
 | 学习待办 | 新增独立待办页，按课程、类型、截止时间和完成状态筛选，默认隐藏已过期项。临期时间可调，测验可直接在浏览器打开。 |
 | 课件 | 按课程、章节和课件活动组织文件。支持添加外部教材和笔记，大文件可引用原位置。Windows 目录展开按需更新，大目录无需每次重新建树。 |
 | 作业 | 从待办查看要求与教师附件，支持富文本、附件上传和本地草稿。Windows 支持拖入，安卓支持拍照。仅交附件时无需生成空白正文。 |
-| Android 课表 | 首页导航直接进入七天周表，课程格按空间显示教室。支持单次调课、临时加课和节假日调课。 |
-| 监控和诊断 | Android 增加锁屏续登和厂商后台设置指引。双端连点校徽五次可导出监控日志，Windows 日志也能通过 MCP 读取。 |
+| Android 课表 | 七天周表显示教室，支持单次调课、临时加课和节假日调课。平板宽屏可同时查看周表和课程详情。 |
+| 监控和诊断 | Android 增加锁屏续登、厂商后台设置指引和断网重试。双端连点校徽五次可导出监控日志，Windows 日志也能通过 MCP 读取。 |
 | 桌面 AI | 新增 MCP 与独立 Skill，可查作业、课件、本地资料和待办，可分析用户提供的成绩表。 |
 | 外观 | 双端改为厦大校徽、黑白界面与蓝色强调色，支持浅色和深色模式。 |
+
+## 界面预览
+
+截图中的课程、附件和教师均为演示数据。
+
+**Windows · 课程课件**
+
+按章节浏览资料，也可以将自己的教材和笔记加到课程里。
+
+<img src="assets/screenshots/windows-courseware.png" width="860" alt="Windows 课程课件页面，展示章节目录、文件类型图标和本地补充资料">
+
+**Android 平板 · 周课表**
+
+左侧切换模块，点课程卡片后可在右侧查看地点、节次和教师。
+
+<img src="assets/screenshots/android-tablet-timetable.png" width="860" alt="Android 平板横屏，左侧为导航和七天周课表，右侧为课程详情">
 
 ## 安装
 
 | 平台 | 发布文件 | 使用方式 |
 | --- | --- | --- |
-| Windows | `XMU-Assistant-1.10.0.exe` | 从托盘退出旧版，再运行新文件 |
-| Android | `XMU-Assistant-Android-1.10.0.apk` | Android 8.0 及以上。兼容同签名旧版覆盖安装 |
-| AI 扩展（Windows） | `XMU-Study-MCP-1.10.0-Windows.zip` | 解压后运行包内的 Codex 安装脚本，或在支持本地 STDIO 的客户端配置可执行文件 |
-| 学习 Skill | `xmu-study-assistant-skill-1.10.0.zip` | 解压后把 `xmu-study-assistant` 放入支持 Agent Skills 的客户端技能目录 |
+| Windows | [1.10.1 EXE](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-1.10.1.exe) | 从托盘退出旧版，再运行新文件 |
+| Android | [1.10.1 APK](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-Android-1.10.1.apk) | Android 8.0 及以上。兼容同签名旧版覆盖安装 |
+| AI 扩展（Windows） | [MCP 1.10.0](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.0/XMU-Study-MCP-1.10.0-Windows.zip) | 解压后运行包内的 Codex 安装脚本，或在支持本地 STDIO 的客户端配置可执行文件 |
+| 学习 Skill | [Skill 1.10.0](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.0/xmu-study-assistant-skill-1.10.0.zip) | 解压后把 `xmu-study-assistant` 放入支持 Agent Skills 的客户端技能目录 |
 
 发布文件的 SHA-256 见 Release 中的 `SHA256SUMS.txt`。Windows 可用 PowerShell 的 `Get-FileHash` 核对。安卓沿用历史版本的调试签名用于覆盖更新，请以本仓库的 Release 文件与校验值核实来源。
 

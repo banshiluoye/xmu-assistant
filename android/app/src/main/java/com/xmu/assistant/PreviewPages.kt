@@ -90,11 +90,11 @@ internal fun NotificationSettingsPreviewPage(
 
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         PreviewCard {
-            ChannelHeader(R.drawable.ic_nav_bell, "本机通知", "签到、监控异常与考试提醒", systemEnabled) { systemEnabled = it }
+            ChannelHeader("本机通知", "签到、监控异常与考试提醒", systemEnabled) { systemEnabled = it }
             PreviewBadge("系统权限正常", PreviewBadgeTone.GREEN)
         }
         PreviewCard {
-            ChannelHeader(R.drawable.ic_nav_check, "微信 PushPlus", "把签到状态推送到微信", pushEnabled) { pushEnabled = it }
+            ChannelHeader("微信 PushPlus", "把签到状态推送到微信", pushEnabled) { pushEnabled = it }
             PreviewBadge("服务需约 3.5 元实名费用", PreviewBadgeTone.AMBER)
             if (pushEnabled) {
                 OutlinedTextField(pushToken, { pushToken = it }, label = { Text("PushPlus Token") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -102,7 +102,7 @@ internal fun NotificationSettingsPreviewPage(
             }
         }
         PreviewCard {
-            ChannelHeader(R.drawable.ic_nav_folder, "QQ 邮箱", "免费 · 使用 SMTP 授权码", qqEnabled) { qqEnabled = it }
+            ChannelHeader("QQ 邮箱", "免费 · 使用 SMTP 授权码", qqEnabled) { qqEnabled = it }
             if (qqEnabled) {
                 OutlinedTextField(qqSender, { qqSender = it }, label = { Text("发件 QQ 邮箱") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(qqPassword, { qqPassword = it }, label = { Text("SMTP 授权码") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
@@ -133,9 +133,9 @@ internal fun NotificationSettingsPreviewPage(
 }
 
 @Composable
-private fun ChannelHeader(icon: Int, title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun ChannelHeader(title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PreviewIconBox(icon)
+        AppLogo(Modifier.size(32.dp), null)
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

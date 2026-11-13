@@ -20,12 +20,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 internal enum class BackgroundSetup(val instruction: String, val shortcutLabel: String) {
-    HONOR("在系统设置搜索「应用启动管理」，找到虾大助手，关闭自动管理，打开「允许后台活动」。", "打开应用启动管理"),
-    XIAOMI("在设置搜索「后台自启动」，允许虾大助手；再在应用的省电策略中选择「无限制」。", "打开后台自启动"),
-    COLOR_OS("在设置搜索「应用耗电管理」或「后台活动」，允许虾大助手在后台运行。", "打开应用设置"),
-    VIVO("在设置搜索「后台耗电管理」，允许虾大助手后台运行；如有「自启动」选项也可开启。", "打开应用设置"),
-    SAMSUNG("在设置搜索「后台使用限制」，把虾大助手加入「从不休眠的应用」。", "打开电池设置"),
-    OTHER("如果系统另有后台使用限制，在虾大助手的应用信息中检查「电池」，允许后台使用。", "打开应用设置");
+    HONOR("在系统设置搜索「应用启动管理」，找到厦大助手，关闭自动管理，打开「允许后台活动」。", "打开应用启动管理"),
+    XIAOMI("在设置搜索「后台自启动」，允许厦大助手；再在应用的省电策略中选择「无限制」。", "打开后台自启动"),
+    COLOR_OS("在设置搜索「应用耗电管理」或「后台活动」，允许厦大助手在后台运行。", "打开应用设置"),
+    VIVO("在设置搜索「后台耗电管理」，允许厦大助手后台运行；如有「自启动」选项也可开启。", "打开应用设置"),
+    SAMSUNG("在设置搜索「后台使用限制」，把厦大助手加入「从不休眠的应用」。", "打开电池设置"),
+    OTHER("如果系统另有后台使用限制，在厦大助手的应用信息中检查「电池」，允许后台使用。", "打开应用设置");
 }
 
 internal fun backgroundSetupFor(manufacturer: String, brand: String): BackgroundSetup {
@@ -80,7 +80,7 @@ internal fun MonitorBackgroundSetupDialog(onDismiss: () -> Unit) {
         title = { Text("锁屏监控设置") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (exempt) "已允许忽略 Android 电池优化。" else "先允许虾大助手忽略 Android 电池优化。")
+                Text(if (exempt) "已允许忽略 Android 电池优化。" else "先允许厦大助手忽略 Android 电池优化。")
                 if (!exempt) OutlinedButton(
                     onClick = {
                         val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,

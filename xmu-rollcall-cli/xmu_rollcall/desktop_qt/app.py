@@ -155,7 +155,7 @@ class DashboardWindow(
 ):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("xmu助手")
+        self.setWindowTitle("厦大助手")
         self.setWindowIcon(app_icon())
         self.resize(1280, 780)
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -285,7 +285,7 @@ class DashboardWindow(
             )
         brand_copy = QVBoxLayout()
         brand_copy.setSpacing(1)
-        brand = QLabel("虾大助手")
+        brand = QLabel("厦大助手")
         brand.setObjectName("Brand")
         brand_copy.addWidget(brand)
         brand_row.addWidget(brand_logo)
@@ -2296,7 +2296,7 @@ class DashboardWindow(
         elif self.background_error_count < 3 or self.background_error_notified:
             return
         self.background_error_notified = True
-        message = NotificationMessage("虾大助手 监控异常", friendly)
+        message = NotificationMessage("厦大助手 监控异常", friendly)
         try:
             settings = getattr(self, "_notification_settings_cache", None) or get_notification_settings(
                 load_config()

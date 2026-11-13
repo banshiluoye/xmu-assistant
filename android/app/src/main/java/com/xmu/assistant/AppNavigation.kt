@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +59,31 @@ internal val moreDestinations = listOf(
 
 internal fun primaryPage(page: String): String =
     if (primaryDestinations.any { it.page == page }) page else "更多"
+
+internal fun useTabletNavigation(widthDp: Float): Boolean = widthDp >= 600f
+
+@Composable
+internal fun AppNavigationRail(selected: String, onSelected: (String) -> Unit) {
+    NavigationRail(
+        modifier = Modifier.fillMaxHeight(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = WindowInsets(0, 0, 0, 0),
+    ) {
+        primaryDestinations.forEach { destination ->
+            NavigationRailItem(
+                selected = primaryPage(selected) == destination.page,
+                onClick = { if (selected != destination.page) onSelected(destination.page) },
+                colors = NavigationRailItemDefaults.colors(
+                    indicatorColor = themePrimarySoft(),
+                    selectedIconColor = themePrimary(),
+                    selectedTextColor = themePrimary(),
+                ),
+                icon = { Icon(painterResource(destination.icon), contentDescription = null, modifier = Modifier.size(23.dp)) },
+                label = { Text(destination.label) },
+            )
+        }
+    }
+}
 
 internal fun parentPage(page: String): String =
     when (page) {

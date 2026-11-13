@@ -28,7 +28,7 @@ internal object MonitorDiagnostics {
     @Synchronized
     fun export(context: Context, settings: AssistantSettings): String = buildString {
         val power = context.getSystemService(PowerManager::class.java)
-        appendLine("虾大助手运行日志 ${BuildConfig.VERSION_NAME}")
+        appendLine("厦大助手运行日志 ${BuildConfig.VERSION_NAME}")
         appendLine("导出时间 ${OffsetDateTime.now()}")
         appendLine("设备 ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
         appendLine("后台监控 requested=${settings.monitorDesired} active=${RollcallMonitorService.hasActiveWorker()} " +

@@ -457,7 +457,7 @@ class LearningPageMixin:
     def _notify_learning(self, text):
         from ..config import get_notification_settings, load_config
         settings = get_notification_settings(load_config())
-        message = NotificationMessage("虾大助手 学习待办", text)
+        message = NotificationMessage("厦大助手 学习待办", text)
         if settings["system"]["enabled"]:
             self._show_system_notification(message.title, message.body)
         if settings["pushplus"]["enabled"] or settings["qq_mail"]["enabled"]:
