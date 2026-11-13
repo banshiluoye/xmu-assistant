@@ -20,7 +20,7 @@
 | Android 课表 | 七天周表显示教室，支持单次调课、临时加课和节假日调课。平板宽屏可同时查看周表和课程详情。 |
 | 监控和诊断 | Android 增加锁屏续登、厂商后台设置指引和断网重试。双端连点校徽五次可导出监控日志，Windows 日志也能通过 MCP 读取。 |
 | 桌面 AI | 新增 MCP 与独立 Skill，可查作业、课件、本地资料和待办，可分析用户提供的成绩表。 |
-| 外观 | 双端改为厦大校徽、黑白界面与蓝色强调色，支持浅色和深色模式。 |
+| 外观 | 外观大改。双端改为厦大校徽、黑白界面与蓝色强调色，支持浅色和深色模式。 |
 
 ## 界面预览
 
@@ -49,7 +49,7 @@
 
 发布文件的 SHA-256 见 Release 中的 `SHA256SUMS.txt`。Windows 可用 PowerShell 的 `Get-FileHash` 核对。安卓沿用历史版本的调试签名用于覆盖更新，请以本仓库的 Release 文件与校验值核实来源。
 
-macOS 和 iOS 暂缓，本次发布包含 Windows 和 Android。Apple 平台构建只在之后的大版本评估。
+macOS 和 iOS 暂缓，本次发布包含 Windows 和 Android。
 
 ## 主要功能
 
@@ -65,6 +65,7 @@ macOS 和 iOS 暂缓，本次发布包含 Windows 和 Android。Apple 平台构�
 2. 解压 AI 扩展 ZIP。使用 Codex 时运行 `安装到Codex.ps1`，随后重载 MCP 或重启客户端。
 3. 其他支持本地 STDIO 的客户端可将 `xmu-study-mcp-1.10.0.exe` 的绝对路径填为命令，参数留空。Skill 可单独安装。
 4. 可以试着问「按课程列出未过期的待办」或「读取最近的 Windows 监控日志」。在 AI 客户端中查看资料会把选定内容传给所用模型服务，按实际需要选择资料。
+5. 可以把该网址复制到harness里让ai自己下载。
 
 [AI 扩展说明](ai-integration/README.md) · [学习 Skill](ai-integration/skills/xmu-study-assistant/SKILL.md)
 
