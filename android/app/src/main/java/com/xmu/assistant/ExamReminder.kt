@@ -250,10 +250,9 @@ internal class ExamReminderReceiver(
         val manager = context.getSystemService(NotificationManager::class.java)
         if (!manager.areNotificationsEnabled()) return
         ExamReminder.ensureChannel(context)
-        val builder = Notification.Builder(context, ExamReminder.CHANNEL_ID)
+        val builder = xmuNotification(context, ExamReminder.CHANNEL_ID)
             .setContentTitle("考试提醒：${exam.courseName}")
             .setContentText("${exam.date} ${exam.timeRange} · ${exam.room.ifBlank { "线上考试" }}")
-            .setSmallIcon(R.drawable.ic_notification)
             .setAutoCancel(true)
             .setDefaults(Notification.DEFAULT_SOUND or Notification.DEFAULT_VIBRATE)
             .setPriority(Notification.PRIORITY_HIGH)

@@ -1,6 +1,5 @@
 package com.xmu.assistant
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -113,7 +112,7 @@ private fun notifyLearningTask(context: Context, task: LearningTask) = runCatchi
     manager.createNotificationChannel(NotificationChannel("learning_tasks","学习待办",NotificationManager.IMPORTANCE_DEFAULT))
     val intent=Intent(context,MainActivity::class.java).putExtra("open_page","学习待办")
     val pending=PendingIntent.getActivity(context,task.key.hashCode(),intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    manager.notify(task.key.hashCode(),Notification.Builder(context,"learning_tasks").setSmallIcon(R.drawable.ic_notification)
+    manager.notify(task.key.hashCode(),xmuNotification(context,"learning_tasks")
         .setContentTitle(task.title).setContentText(task.courseName+" · "+task.deadline.ifBlank { "新待办" }).setContentIntent(pending).setAutoCancel(true).build())
 }
 

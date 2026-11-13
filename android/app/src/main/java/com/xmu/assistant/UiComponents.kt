@@ -1,6 +1,5 @@
 package com.xmu.assistant
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -114,10 +113,9 @@ fun sendLocalTestNotification(activity: ComponentActivity) {
     )
     manager.notify(
         2001,
-        Notification.Builder(activity, "xmu_assistant_test")
+        xmuNotification(activity, "xmu_assistant_test")
             .setContentTitle("厦大助手 测试通知")
             .setContentText("如果你收到这条消息，说明本机通知可用。")
-            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build(),

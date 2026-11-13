@@ -6,7 +6,7 @@
     <shortcut
         android:shortcutId="rollcall_status"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@mipmap/ic_xmu_emblem"
         android:shortcutShortLabel="@string/shortcut_rollcall_short"
         android:shortcutLongLabel="@string/shortcut_rollcall_long">
         <intent
@@ -19,7 +19,7 @@
     <shortcut
         android:shortcutId="schedule"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@mipmap/ic_xmu_emblem"
         android:shortcutShortLabel="@string/shortcut_schedule_short"
         android:shortcutLongLabel="@string/shortcut_schedule_long">
         <intent
@@ -32,7 +32,7 @@
     <shortcut
         android:shortcutId="scores"
         android:enabled="true"
-        android:icon="@drawable/ic_notification"
+        android:icon="@mipmap/ic_xmu_emblem"
         android:shortcutShortLabel="@string/shortcut_score_short"
         android:shortcutLongLabel="@string/shortcut_score_long">
         <intent

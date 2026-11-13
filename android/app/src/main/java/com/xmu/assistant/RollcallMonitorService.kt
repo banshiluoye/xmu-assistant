@@ -438,11 +438,10 @@ class RollcallMonitorService : Service() {
         )
         // 本地通知（快速、无网络）：留在 gate 互斥区内，保证登出/暂停时不会漏发本地提醒
         val localPosted = postReminderNotification(event.id.hashCode(), notify.systemEnabled) {
-            Notification.Builder(this, REMINDER_CHANNEL_ID)
+            xmuNotification(this, REMINDER_CHANNEL_ID)
                 .setContentTitle("厦大助手 签到提醒")
                 .setContentText("${event.courseTitle} / ${event.type}")
                 .setStyle(Notification.BigTextStyle().bigText(rollcallNotificationBody(event, actionUrl)))
-                .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .build()
@@ -480,10 +479,9 @@ class RollcallMonitorService : Service() {
         systemEnabled: Boolean = AssistantSettings(this).notifications().systemEnabled,
         notificationId: Int = MONITOR_PROBLEM_NOTIFICATION_ID,
     ): Boolean = postReminderNotification(notificationId, systemEnabled) {
-        Notification.Builder(this, REMINDER_CHANNEL_ID)
+        xmuNotification(this, REMINDER_CHANNEL_ID)
             .setContentTitle("厦大助手 后台监控异常")
             .setContentText(message)
-            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
             .setAutoCancel(true)
             .build()
@@ -526,10 +524,9 @@ class RollcallMonitorService : Service() {
         } else {
             "监控运行中 · 最近检查：$lastCheck · 间隔 ${intervalSeconds ?: settings.rollcall().pollIntervalSeconds} 秒"
         }
-        return Notification.Builder(this, CHANNEL_ID)
+        return xmuNotification(this, CHANNEL_ID)
             .setContentTitle("厦大助手")
             .setContentText(status ?: text)
-            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent())
             .setOngoing(true)
             .build()
