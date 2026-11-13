@@ -1,12 +1,26 @@
 <div align="center">
-<img src="assets/xmu-assistant-mark.png" alt="虾大助手图标" width="80">
+<img src="assets/xmu-assistant-mark.png" alt="厦大助手图标" width="80">
 
-# 虾大助手
+# 厦大助手
 
 面向厦门大学学生的个人学习工具。查看课程和待办，管理课件与作业，并在电脑上连接 AI 学习助手。
 
-[下载 1.10.0](https://github.com/banshiluoye/xmu-assistant/releases/tag/v1.10.0)
+这是基于 [democard/xmu_assistant 1.8.4](https://github.com/democard/xmu_assistant/tree/v1.8.4) 的个人魔改版。原作者提供了 Windows、Android、签到监控和教务查询的基础。我按自己的日常学习流程，重新做了待办、作业、课件、手机课表和 AI 接入。感谢上游作者。
+
+[查看正式发布](https://github.com/banshiluoye/xmu-assistant/releases)
 </div>
+
+## 相比上游改了什么
+
+| 范围 | 个人版的改动 |
+| --- | --- |
+| 学习待办 | 新增独立待办页，按课程、类型、截止时间和完成状态筛选，默认隐藏已过期项。临期时间可调，测验可直接在浏览器打开。 |
+| 课件 | 按课程、章节和课件活动组织文件。支持添加外部教材和笔记，大文件可引用原位置。Windows 目录展开按需更新，大目录无需每次重新建树。 |
+| 作业 | 从待办查看要求与教师附件，支持富文本、附件上传和本地草稿。Windows 支持拖入，安卓支持拍照。仅交附件时无需生成空白正文。 |
+| Android 课表 | 首页导航直接进入七天周表，课程格按空间显示教室。支持单次调课、临时加课和节假日调课。 |
+| 监控和诊断 | Android 增加锁屏续登和厂商后台设置指引。双端连点校徽五次可导出监控日志，Windows 日志也能通过 MCP 读取。 |
+| 桌面 AI | 新增 MCP 与独立 Skill，可查作业、课件、本地资料和待办，可分析用户提供的成绩表。 |
+| 外观 | 双端改为厦大校徽、黑白界面与蓝色强调色，支持浅色和深色模式。 |
 
 ## 安装
 
@@ -48,4 +62,4 @@ macOS 和 iOS 暂缓，本次发布包含 Windows 和 Android。Apple 平台构�
 
 公开源码和发布包只包含应用、构建输入与合成测试数据。账号、会话、课程数据、个人资料、运行日志与签名密钥保存在使用者或构建者本机。反馈问题时请先检查并遮盖日志中的个人信息。
 
-项目基于 [democard/xmu_assistant 1.8.4](https://github.com/democard/xmu_assistant/tree/v1.8.4) 修改，沿用 [Apache-2.0 许可](LICENSE)。本仓库包含 Windows 和 Android 功能增强、MCP 与学习 Skill。图标来源见 [校徽说明](assets/XMU-EMBLEM-SOURCE.md) 和各素材目录的署名文件。此项目是独立维护的个人工具。
+代码沿用 [Apache-2.0 许可](LICENSE)。图标来源见 [校徽说明](assets/XMU-EMBLEM-SOURCE.md) 和各素材目录的署名文件。此项目由个人独立维护。
