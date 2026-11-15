@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -51,7 +52,7 @@ class RollcallNotificationTest {
         assertEquals(2, notifications.size)
         assertTrue(notifications.all { it.channelId == REMINDER_CHANNEL })
         assertTrue(notifications.all { it.smallIcon.resId == R.drawable.ic_xmu_notification })
-        assertTrue(notifications.all { it.getLargeIcon()?.resId == R.drawable.xmu_assistant_mark })
+        notifications.forEach { assertNull(it.getLargeIcon()) }
         assertEquals(NotificationManager.IMPORTANCE_DEFAULT, manager.getNotificationChannel(REMINDER_CHANNEL).importance)
         assertEquals(NotificationManager.IMPORTANCE_LOW, manager.getNotificationChannel(MONITOR_CHANNEL).importance)
         val rollcall = shadowOf(manager).getNotification(event.id.hashCode())
