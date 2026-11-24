@@ -1,6 +1,3 @@
-<div align="center">
-<img src="assets/xmu-assistant-mark.png" width="82" alt="厦大助手图标">
-
 # 厦大助手 · XMU Assistant
 
 **在手机上看课表和待办，在电脑上管理课件与作业，让 AI Agent 读懂具体的课程任务。**
