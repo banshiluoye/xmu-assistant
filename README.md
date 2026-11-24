@@ -10,11 +10,6 @@
 
 ## 一句话启动实验任务
 
-> 帮我完成 UNIX 管道实验。先读作业要求、教师附件和相关课件，再给出实验方案、可运行示例和验证结果。先保存到本地。
-
-[<img src="assets/screenshots/agent-demo-cover.png" width="860" alt="UNIX 实验演示：从一句指令到检索作业、读取课件和保存成果">](https://raw.githubusercontent.com/banshiluoye/xmu-assistant/main/assets/screenshots/agent-demo.mp4)
-
-[观看 24 秒 MP4 演示](https://raw.githubusercontent.com/banshiluoye/xmu-assistant/main/assets/screenshots/agent-demo.mp4) · [查看 MCP 与 Skill 能力](ai-integration/README.md)
 
 视频用合成课程回放实际的本地 MCP 调用。客户端定位作业，读取教师附件和进程课件，在工作目录生成实验方案与示例代码，运行管道并检查输出及退出码。录制时用脚本编排调用，方案与代码为演示样例。
 
