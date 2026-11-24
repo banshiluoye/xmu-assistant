@@ -22,6 +22,7 @@ from xmu_rollcall.desktop_qt.core import (
     MIN_POLL_INTERVAL_SECONDS,
     MonitorWorker,
 )
+from xmu_rollcall.desktop_qt.app import DashboardWindow
 from xmu_rollcall.rollcall_models import RollcallEvent
 from xmu_rollcall.utils import RetryCancelled, SessionExpiredError
 
@@ -73,6 +74,36 @@ class _FakeEngine:
 
 
 class MonitorWorkerLoopTest(unittest.TestCase):
+    def test_rotated_cookies_reach_persisted_cache_once(self):
+        main = requests.Session()
+        main.cookies.set("sid", "old", domain="lnt.xmu.edu.cn", path="/")
+        worker_engine = _FakeEngine([{"rollcalls": []}])
+        events = []
+        stop = _GateStopEvent(2)
+        with mock.patch(
+            "xmu_rollcall.desktop_qt.core.RollcallEngine", return_value=worker_engine
+        ):
+            worker = MonitorWorker(main, events.append, stop, 30)
+            worker.session.cookies.set("sid", "renewed", domain="lnt.xmu.edu.cn", path="/")
+            worker.run()
+
+        first, second = [event for event in events if event[0] == "poll"]
+        self.assertIs(first[5], main)
+        self.assertEqual(len(second), 5)
+        dashboard = mock.Mock(session=main, account={"id": 8})
+        with mock.patch(
+            "xmu_rollcall.desktop_qt.app.get_cookies_path", return_value="cache.json"
+        ), mock.patch("xmu_rollcall.desktop_qt.app.save_session") as save:
+            DashboardWindow._sync_shared_session(dashboard, *first[5:])
+            self.assertEqual(main.cookies.get("sid"), "renewed")
+            save.assert_called_once_with(main, "cache.json")
+            DashboardWindow._sync_shared_session(dashboard, *first[5:])
+            self.assertEqual(save.call_count, 1)
+            main.cookies.set("sid", "newer", domain="lnt.xmu.edu.cn", path="/")
+            DashboardWindow._sync_shared_session(dashboard, *first[5:])
+            self.assertEqual(main.cookies.get("sid"), "newer")
+            self.assertEqual(save.call_count, 1)
+
     def _run(self, engine, loops, interval=60):
         events = []
         stop = _GateStopEvent(loops)

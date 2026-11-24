@@ -1,8 +1,8 @@
 param([switch]$AllowSubmit,[string]$CodexDirectory)
 $ErrorActionPreference='Stop'
 $bundleRoot=$PSScriptRoot
-$server=Join-Path $bundleRoot 'xmu-study-mcp-1.10.0.exe'
-if (-not (Test-Path -LiteralPath $server)) { throw '请从完整运行包执行安装脚本，缺少 xmu-study-mcp-1.10.0.exe。' }
+$server=Join-Path $bundleRoot 'xmu-study-mcp-1.10.2.exe'
+if (-not (Test-Path -LiteralPath $server)) { throw '请从完整运行包执行安装脚本，缺少 xmu-study-mcp-1.10.2.exe。' }
 $codexRoot=if ($CodexDirectory) { $CodexDirectory } elseif ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $configPath=Join-Path $codexRoot 'config.toml'
 $skillBase=if ($CodexDirectory) { Join-Path $codexRoot 'skills' } else { Join-Path $env:USERPROFILE '.agents\skills' }

@@ -169,6 +169,7 @@ def clone_session(src: requests.Session) -> requests.Session:
     with SESSION_COOKIE_LOCK:
         for cookie in src.cookies:
             cloned.cookies.set_cookie(_copy_cookie(cookie))
+        cloned._xmu_cookie_baseline = snapshot_session_cookies(cloned)
     cloned.headers.update(src.headers)
     # trust_env 随源会话：运行时 proxy_guard 补丁已令新会话 trust_env=False，
     # 克隆复制源值即与全局禁用系统代理口径一致；未打补丁环境（库形态）随源。
@@ -197,6 +198,43 @@ def _copy_cookie(cookie: Cookie) -> Cookie:
     return cloned
 
 
+def snapshot_session_cookies(session):
+    if not isinstance(session, requests.Session):
+        return {}
+    with SESSION_COOKIE_LOCK:
+        return {(c.domain, c.path, c.name): _copy_cookie(c) for c in session.cookies}
+
+
+def changed_session_cookies(before, after):
+    return {
+        key: (before.get(key), after.get(key))
+        for key in before.keys() | after.keys()
+        if _cookie_state(before.get(key)) != _cookie_state(after.get(key))
+    }
+
+
+def _cookie_state(cookie):
+    return vars(cookie) if cookie is not None else None
+
+
+def apply_session_cookie_changes(session, changes):
+    """Apply a worker's rotation only if the main session still holds its old value."""
+    if not changes or not isinstance(session, requests.Session):
+        return False
+    with SESSION_COOKIE_LOCK:
+        current = snapshot_session_cookies(session)
+        changed = False
+        for key, (old, new) in changes.items():
+            if _cookie_state(current.get(key)) != _cookie_state(old):
+                continue
+            if new is None:
+                session.cookies.clear(*key)
+            else:
+                session.cookies.set_cookie(_copy_cookie(new))
+            changed = True
+        return changed
+
+
 def merge_worker_session_cookies(
     main_session,
     account: dict | None,
@@ -218,6 +256,11 @@ def merge_worker_session_cookies(
         return False
     if worker_session is None or worker_session is main_session:
         return False
+    baseline = getattr(worker_session, "_xmu_cookie_baseline", None)
+    if isinstance(baseline, dict):
+        return apply_session_cookie_changes(
+            main_session, changed_session_cookies(baseline, snapshot_session_cookies(worker_session))
+        )
     merge_cookies(main_session, worker_session)
     return True
 

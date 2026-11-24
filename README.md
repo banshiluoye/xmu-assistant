@@ -2,7 +2,7 @@
 
 **在手机上看课表和待办，在电脑上管理课件与作业，让 AI Agent 读懂具体的课程任务。**
 
-[下载 Windows](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-1.10.1.exe) · [下载 Android](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-Android-1.10.1.apk) · [接入 AI 客户端](#安装-mcp-和-skill) · [观看实验演示](#一句话启动实验任务)
+[下载 Windows](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.2/XMU-Assistant-1.10.2.exe) · [下载 Android](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-Android-1.10.1.apk) · [接入 AI 客户端](#安装-mcp-和-skill) · [观看实验演示](#一句话启动实验任务)
 
 </div>
 
@@ -19,7 +19,7 @@
 
 对比基线为本项目采用的上游 **v1.8.4**。[查看原版功能与说明](https://github.com/democard/xmu_assistant/blob/v1.8.4/README.md)
 
-| 场景 | 上游 v1.8.4 | 厦大助手 v1.10.1 |
+| 场景 | 上游 v1.8.4 | 厦大助手（Windows 1.10.2 / Android 1.10.1） |
 | --- | --- | --- |
 | **Android 锁屏监控** | 已有前台服务、会话恢复和电池设置提示，长期后台运行仍受厂商省电策略影响 | 新增分厂商的「锁屏监控设置」入口。监控期间可尝试续登，网络恢复后唤醒等待、失败时退避重试，并记录最近检查与异常 |
 | **学习待办** | 可查学习记录和提醒 | Windows / Android 独立待办页，按课程、类型、截止时间和完成状态筛选。默认隐藏过期项，临期提醒可配置，测验可在浏览器打开 |
@@ -63,10 +63,10 @@
 
 | 平台 | 发布文件 | 使用方式 |
 | --- | --- | --- |
-| Windows | [1.10.1 EXE](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-1.10.1.exe) | 从托盘退出旧版，再运行新文件 |
+| Windows | [1.10.2 EXE](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.2/XMU-Assistant-1.10.2.exe) | 从托盘退出旧版，再运行新文件 |
 | Android | [1.10.1 APK](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.1/XMU-Assistant-Android-1.10.1.apk) | Android 8.0 及以上，兼容同签名旧版覆盖安装 |
-| AI 扩展（Windows） | [MCP 1.10.0](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.0/XMU-Study-MCP-1.10.0-Windows.zip) | 解压后在 AI 客户端注册本地 STDIO 服务 |
-| 学习 Skill | [Skill 1.10.0](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.0/xmu-study-assistant-skill-1.10.0.zip) | 解压后把 `xmu-study-assistant` 放入支持 Agent Skills 的客户端技能目录 |
+| AI 扩展（Windows） | [MCP 1.10.2](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.2/XMU-Study-MCP-1.10.2-Windows.zip) | 解压后在 AI 客户端注册本地 STDIO 服务 |
+| 学习 Skill | [Skill 1.10.2](https://github.com/banshiluoye/xmu-assistant/releases/download/v1.10.2/xmu-study-assistant-skill-1.10.2.zip) | 解压后把 `xmu-study-assistant` 放入支持 Agent Skills 的客户端技能目录 |
 
 双端首次用自己的校园账号登录。发布文件的 SHA-256 见 Release 中的 `SHA256SUMS.txt`，可用 PowerShell 的 `Get-FileHash` 核对。安卓沿用历史版本的调试签名用于覆盖更新，请以本仓库的发布文件与校验值核实来源。macOS 和 iOS 暂缓。
 
@@ -74,7 +74,7 @@
 
 1. 在 Windows 助手登录。MCP 复用当前桌面会话，读取本机监控诊断无需校园登录。
 2. 在 Codex 中使用时，解压 AI 扩展 ZIP，运行 `安装到Codex.ps1`，然后重载 MCP 或重启客户端。也可把本仓库链接交给具备本地工具和下载权限的 AI 客户端，请它按本节指导安装。
-3. 其他支持本地 STDIO 的客户端可把 `xmu-study-mcp-1.10.0.exe` 的绝对路径设为命令，参数留空。支持 Agent Skills 的客户端可以额外安装 Skill。
+3. 其他支持本地 STDIO 的客户端可把 `xmu-study-mcp-1.10.2.exe` 的绝对路径设为命令，参数留空。支持 Agent Skills 的客户端可以额外安装 Skill。
 4. 用「列出我未过期的学习待办」验证。云端 AI 客户端会把选定的课程内容交给所用模型服务，按需指定课程和文件。
 
 [详细配置与权限说明](ai-integration/README.md) · [查看学习 Skill](ai-integration/skills/xmu-study-assistant/SKILL.md)

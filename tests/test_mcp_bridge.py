@@ -119,9 +119,43 @@ def test_account_and_cookie_changes_stop_active_operation(campus):
             account["id"] = 2
             ensure()
     with pytest.raises(bridge.SessionExpiredError):
-        with service.context() as (_, _, _, ensure):
+        with service.context(network=True) as (_, _, _, ensure):
             cookie.unlink()
             ensure()
+
+
+def test_local_work_survives_a_desktop_cookie_rotation(campus):
+    service, _, cookie, *_ = campus
+    with service.context() as (_, _, _, ensure):
+        cookie.write_text("new-synthetic-cookie", encoding="utf-8")
+        ensure()
+
+
+def test_network_reads_tolerate_cookie_rotation_but_writes_stop(campus):
+    service, _, cookie, *_ = campus
+    with service.context(network=True) as (_, _, _, ensure):
+        cookie.write_text("updated-synthetic-cookie", encoding="utf-8")
+        ensure()
+    with pytest.raises(bridge.SessionExpiredError, match="已更新"):
+        with service.context(network=True, protect_write=True) as (_, _, _, ensure):
+            cookie.write_text("newer-cookie", encoding="utf-8")
+            ensure()
+
+
+def test_status_only_probes_when_explicitly_requested(campus, monkeypatch):
+    service, *_ = campus
+    probe = Mock(return_value="valid")
+    monkeypatch.setattr(service, "_verify_saved_session", probe)
+    unchecked = service.status()
+    assert unchecked["session_state"] == "unchecked"
+    assert unchecked["session_verified"] is None
+    assert "desktop_version" not in unchecked
+    probe.assert_not_called()
+    assert service.status(verify=True)["session_verified"] is True
+    probe.return_value = "expired"
+    assert service.status(verify=True)["session_verified"] is False
+    probe.return_value = "unknown"
+    assert service.status(verify=True)["session_verified"] is None
 
 
 def test_account_workspaces_do_not_share_files(campus):

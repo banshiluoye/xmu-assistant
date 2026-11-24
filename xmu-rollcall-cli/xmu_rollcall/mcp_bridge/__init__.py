@@ -1,3 +1,3 @@
 """Optional, headless MCP integration. Never imported by the desktop UI."""
 
-from .. import __version__ as __version__
+__version__ = "1.10.2"

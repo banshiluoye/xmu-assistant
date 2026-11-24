@@ -89,13 +89,17 @@ from ..notifications import (
 from ..utils import (
     API_TIMEOUT,
     answer_failure_detail,
+    apply_session_cookie_changes,
     base_url,
+    changed_session_cookies,
     clone_session,
     compute_auto_answer_delay,
     headers,
     late_worker_result_accepted,
     load_session,
     merge_worker_session_cookies,
+    save_session,
+    snapshot_session_cookies,
     tune_session,
     verify_session,
 )
@@ -819,6 +823,7 @@ class DashboardWindow(
                 return
             session = requests.Session()
             loaded = load_session(session, get_cookies_path(account.get("id", 1)))
+            stored_cookies = snapshot_session_cookies(session)
             profile = verify_session(session) if loaded else False
             if profile is None:
                 # 网络故障无法判定（如开机自启时网络尚未就绪）：
@@ -843,7 +848,8 @@ class DashboardWindow(
                 self._emit(("login_success", session, None, login_epoch, account["username"], account["password"], profile.get("name") or account["username"]))
                 session = None
                 return
-            self._emit(("login_success", session, account, login_epoch))
+            changed = bool(changed_session_cookies(stored_cookies, snapshot_session_cookies(session)))
+            self._emit(("login_success", session, account, login_epoch, changed))
             session = None  # Ownership transfers to the queued event handler.
         except requests.RequestException:
             self._emit(("restore_failed", "网络连接失败，将自动重试恢复登录。", silent, login_epoch, "network"))
@@ -1428,7 +1434,13 @@ class DashboardWindow(
 
         守卫逻辑封装在 utils.merge_worker_session_cookies（纯函数，便于单测）。
         """
-        merge_worker_session_cookies(self.session, self.account, worker_session, worker_account_id)
+        if merge_worker_session_cookies(self.session, self.account, worker_session, worker_account_id):
+            if self.account:
+                save_session(self.session, get_cookies_path(self.account["id"]))
+
+    def _sync_shared_session(self, source, changes):
+        if self.session is source and self.account and apply_session_cookie_changes(source, changes):
+            save_session(source, get_cookies_path(self.account["id"]))
 
     def _refresh_after_login(self):
         self.log("登录完成，开始后台刷新签到情况和课件课程。")
@@ -1511,6 +1523,8 @@ class DashboardWindow(
             except Exception:
                 pass
         self.account = account
+        if len(event) == 5 and event[4] is True:
+            save_session(self.session, get_cookies_path(account["id"]))
         # These are session-owned task gates, not account-owned preferences.
         # Reset them on every successful Session replacement so stale workers
         # cannot strand same-account refreshes behind a closed gate.
@@ -1720,6 +1734,8 @@ class DashboardWindow(
             return
         checked_at = event[2]
         rollcall_count = event[3]
+        if len(event) > 6:
+            self._sync_shared_session(event[5], event[6])
         self._reset_background_error_state()
         self.metric_last_check.setText(time.strftime("%H:%M:%S", time.localtime(checked_at)))
         self.metric_rollcall_count.setText(str(rollcall_count))

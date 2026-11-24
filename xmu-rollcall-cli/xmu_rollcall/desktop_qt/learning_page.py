@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QHeaderView, Q
 
 from ..learning import LearningApi, LearningStore, LearningTask, LOCAL_TZ, TASK_TYPES
 from ..notifications import NotificationMessage
-from ..utils import SessionExpiredError, clone_session
+from ..utils import SessionExpiredError, changed_session_cookies, clone_session, snapshot_session_cookies
 from ..worker_sessions import close_cloned_session
 from .ui_components import labeled_field
 
@@ -259,7 +259,9 @@ class LearningPageMixin:
             session = None
             try:
                 session = clone_session(source)
+                before = snapshot_session_cookies(session)
                 payload = {"ok": True, "value": operation(LearningApi(session))}
+                payload["cookie_changes"] = changed_session_cookies(before, snapshot_session_cookies(session))
             except Exception as error:
                 payload = {"ok": False, "message": str(error), "expired": isinstance(error, SessionExpiredError)}
             finally:
@@ -329,6 +331,8 @@ class LearningPageMixin:
             if payload.get("expired"):
                 self.logout(expired=True)
             return
+        if changes := payload.get("cookie_changes"):
+            self._sync_shared_session(source, changes)
         if kind == "detail":
             from .homework_window import HomeworkWindow
             task, data = payload["value"]

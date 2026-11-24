@@ -32,12 +32,14 @@ from ..utils import (
     RetryCancelled,
     SessionExpiredError,
     base_url,
+    changed_session_cookies,
     clone_session,
     headers,
     remember_good_endpoint,
     ordered_endpoints,
     response_session_expired,
     retry_request,
+    snapshot_session_cookies,
     unwrap_list,
 )
 from ..verify import find_number_code
@@ -97,9 +99,10 @@ class MonitorWorker(threading.Thread):
     def __init__(self, session, emit, stop_event: threading.Event, interval: int, username: str = ""):
         super().__init__(daemon=True)
         # 独立 cookiejar：避免与课件池/应答 worker 并发请求时竞争写入主 session 的
-        # cookiejar（requests 不保证 Session 线程安全）。轮询是只读 GET，无 cookie 回写需求。
+        # cookiejar（requests 不保证 Session 线程安全）。成功轮询可能更新服务端 Cookie。
         self.session = clone_session(session)
         self._source_session = session
+        self._cookie_snapshot = snapshot_session_cookies(self.session)
         # C2：轮询逻辑统一走 RollcallEngine（拉取→会话判定→解析唯一实现），
         # 去重集合仍保留在本 worker（状态所有者），杜绝 engine/core 双份逻辑漂移。
         self.engine = RollcallEngine(self.session)
@@ -143,15 +146,11 @@ class MonitorWorker(threading.Thread):
                 if self.stop_event.is_set():
                     break
                 self.query_count += 1
-                self.emit(
-                    (
-                        "poll",
-                        self.query_count,
-                        time.time(),
-                        len(payload.get("rollcalls", [])),
-                        self.stop_event,
-                    )
-                )
+                cookies = snapshot_session_cookies(self.session)
+                changes = changed_session_cookies(self._cookie_snapshot, cookies)
+                self._cookie_snapshot = cookies
+                poll = ("poll", self.query_count, time.time(), len(payload.get("rollcalls", [])), self.stop_event)
+                self.emit(poll + (self._source_session, changes) if changes else poll)
 
                 events = self.engine.build_events(payload)
                 # 自适应轮询节奏：存在进行中的签到（remaining_seconds > 0）时切密集
