@@ -44,8 +44,13 @@ internal fun meaningfulLearningHtml(html: String): String {
         .replace(Regex("[\\s\\u00a0\\u200b\\ufeff]"),"")
     return if(text.isEmpty() && !Regex("(?i)<(?:img|video|audio|object|iframe)\\b").containsMatchIn(body)) "" else html.trim()
 }
-internal fun userLearningUploads(o: JSONObject): List<JSONObject> = (o.optJSONArray("uploads") ?: JSONArray()).objects()
-    .filter { it.optRealString("source") != "auto-generated-pdf" }
+private fun JSONObject.isLearningTextPreview() = optRealString("source") == "auto-generated-pdf"
+
+internal fun userLearningUploads(o: JSONObject): List<JSONObject> =
+    o.optJSONArray("uploads")?.objects().orEmpty().filterNot { it.isLearningTextPreview() }
+
+internal fun learningTextPreviews(o: JSONObject): List<JSONObject> =
+    o.optJSONArray("uploads")?.objects().orEmpty().filter { it.isLearningTextPreview() }
 internal fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
 internal data class HomeworkSnapshot(val detail: JSONObject, val submission: JSONObject, val history: List<JSONObject>, val group: Boolean)
 internal class LearningSubmissionUncertain : IllegalStateException("提交结果待核实，已保留草稿和附件。请重读平台记录，避免直接重复提交。")
@@ -160,17 +165,18 @@ internal class LearningClient(
     }
     fun submit(task: LearningTask, html: String, uploads: List<JSONObject>, draft: Boolean): HomeworkSnapshot {
         val content=meaningfulLearningHtml(html)
-        val files=uploads.filter { it.optRealString("source")!="auto-generated-pdf" }
+        val before=homework(task)
+        require(!before.group) { "分组作业请在原平台提交" }
+        require(!before.detail.optBoolean("is_closed") && (!before.detail.has("is_started") || before.detail.optBoolean("is_started"))) { "作业当前不可提交" }
+        val previewIds = learningTextPreviews(before.submission).map { it.optRealString("id") }.toSet()
+        val files=uploads.filterNot { it.isLearningTextPreview() || it.optRealString("id") in previewIds }
         val expected=files.map { it.get("id").toString() }.toSet()
         fun matches(snapshot: HomeworkSnapshot): Boolean {
             val sub=snapshot.submission
             return sub.has("id") && !sub.isNull("id") && sub.optBoolean("is_draft")==draft && meaningfulLearningHtml(sub.optRealString("comment"))==content &&
                 userLearningUploads(sub).map { it.get("id").toString() }.toSet()==expected &&
-                (content.isNotBlank() || sub.optJSONArray("uploads")?.objects().orEmpty().none { it.optRealString("source")=="auto-generated-pdf" })
+                (content.isNotBlank() || learningTextPreviews(sub).isEmpty())
         }
-        val before=homework(task)
-        require(!before.group) { "分组作业请在原平台提交" }
-        require(!before.detail.optBoolean("is_closed") && (!before.detail.has("is_started") || before.detail.optBoolean("is_started"))) { "作业当前不可提交" }
         if(matches(before)) return before
         ensureCurrent()
         try { request("POST","/api/course/activities/${task.id}/submissions",JSONObject().put("comment",content)

@@ -199,7 +199,7 @@ def _copy_cookie(cookie: Cookie) -> Cookie:
 
 
 def snapshot_session_cookies(session):
-    if not isinstance(session, requests.Session):
+    if not isinstance(session, requests.sessions.Session):
         return {}
     with SESSION_COOKIE_LOCK:
         return {(c.domain, c.path, c.name): _copy_cookie(c) for c in session.cookies}
@@ -219,7 +219,7 @@ def _cookie_state(cookie):
 
 def apply_session_cookie_changes(session, changes):
     """Apply a worker's rotation only if the main session still holds its old value."""
-    if not changes or not isinstance(session, requests.Session):
+    if not changes or not isinstance(session, requests.sessions.Session):
         return False
     with SESSION_COOKIE_LOCK:
         current = snapshot_session_cookies(session)

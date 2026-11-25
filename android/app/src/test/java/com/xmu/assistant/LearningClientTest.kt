@@ -63,4 +63,31 @@ class LearningClientTest {
         assertThrows(LearningSubmissionUncertain::class.java){LearningClient("fixture",transport).submit(task,"<p>答案</p>",emptyList(),false)}
         assertEquals(1,writes)
     }
+
+    @Test fun `body only excludes legacy unnamed preview and reports generated preview separately`() {
+        val requests = mutableListOf<JSONObject>()
+        val transport = QueryHttpTransport { request ->
+            val body = when {
+                request.method == "POST" -> {
+                    assertTrue(request.url.endsWith("/submissions"))
+                    requests += JSONObject(request.body)
+                    "{}"
+                }
+                request.url.endsWith("/api/activities/9") -> """{"course_id":8,"type":"homework"}"""
+                request.url.endsWith("/api/profile") -> """{"id":1}"""
+                request.url.endsWith("submission_list") -> """{"list":[]}"""
+                requests.isEmpty() -> """{"id":1,"comment":"旧正文","uploads":[{"id":5,"name":"","source":"auto-generated-pdf"}]}"""
+                else -> """{"id":2,"is_draft":false,"comment":"1","uploads":[{"id":6,"name":null,"source":"auto-generated-pdf"}]}"""
+            }
+            QueryHttpResponse(request.url,200,null,body,emptyMap())
+        }
+        val confirmed = LearningClient("fixture", transport).submit(
+            task, "1", listOf(JSONObject("""{"id":5}""")), false
+        )
+        val payload = requests.single()
+        assertEquals("1",payload.getString("comment"))
+        assertEquals(0,payload.getJSONArray("uploads").length())
+        assertTrue(userLearningUploads(confirmed.submission).isEmpty())
+        assertEquals(1,learningTextPreviews(confirmed.submission).size)
+    }
 }

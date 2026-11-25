@@ -12,6 +12,6 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='xmu-study-mcp-1.10.2',
+exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='xmu-study-mcp-1.10.3',
           debug=False, strip=False, upx=False, console=True,
           icon=str(root / 'assets/xmu-assistant.ico'))

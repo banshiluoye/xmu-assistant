@@ -99,7 +99,11 @@ internal class HomeworkEditState(
                 val confirmed=withContext(Dispatchers.IO){inbox.client().submit(task,html,uploads,draft)}
                 inbox.assertCurrent();snapshot=confirmed;uploads=userLearningUploads(confirmed.submission);html=meaningfulLearningHtml(confirmed.submission.optRealString("comment"))
                 inbox.confirmSubmission(task,if(draft) "草稿" else "已提交")
-                message=if(draft) "平台草稿已核实" else "已交付作业，平台记录已核实";saveLocal()
+                val result = if (draft) "平台草稿已核实" else "已交付作业，平台记录已核实"
+                val previews = learningTextPreviews(confirmed.submission).size
+                val previewSummary = if (previews > 0) "，平台正文预览 $previews 个" else ""
+                message = "$result，用户附件 ${uploads.size} 个$previewSummary"
+                saveLocal()
             } catch(e:Exception){uncertain=e is LearningSubmissionUncertain;message=e.message.orEmpty()}
             finally {busy=false}
         }

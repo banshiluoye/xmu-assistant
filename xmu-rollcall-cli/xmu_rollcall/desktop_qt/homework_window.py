@@ -15,7 +15,7 @@ from PySide6.QtGui import QFont, QImage, QTextCharFormat, QTextListFormat
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
     QMessageBox, QPushButton, QProgressBar, QSplitter, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
-from ..learning import LearningApi, LearningStore, base_url, user_attachments, generated_previews
+from ..learning import LearningApi, LearningStore, base_url, submission_file_counts, user_attachments
 from ..learning_html import clean_html, editor_html, submission_html
 from ..draft_writer import DraftWriter
 from .homework_widgets import attachment_item, attachment_list, build_answer_panel, panel_heading
@@ -215,8 +215,11 @@ class HomeworkWindow(QDialog):
         submission = self.data["submission"]
         if submission.get("id") is None:
             return "平台尚无提交记录；编辑内容会自动保存为本地草稿。"
-        preview = " 平台另有正文预览文件。" if generated_previews(submission) else ""
-        return f"平台记录：{'草稿' if submission.get('is_draft') else '已提交'}；时间：{submission.get('submitted_at') or submission.get('created_at') or '未提供'}；历史记录 {len(self.data.get('history', []))} 条。" + preview
+        counts = submission_file_counts(submission)
+        details = f"用户附件 {counts['attachment_count']} 个"
+        if previews := counts["platform_text_preview_count"]:
+            details += f"，平台正文预览 {previews} 个"
+        return f"平台记录：{'草稿' if submission.get('is_draft') else '已提交'}；时间：{submission.get('submitted_at') or submission.get('created_at') or '未提供'}；{details}；历史记录 {len(self.data.get('history', []))} 条。"
 
     def _bold(self):
         self.editor.setFontWeight(QFont.Weight.Normal if self.editor.fontWeight() >= QFont.Weight.Bold else QFont.Weight.Bold)

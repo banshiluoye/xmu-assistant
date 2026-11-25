@@ -12,7 +12,7 @@ from xmu_rollcall.config import get_rollcall_settings, normalize_rollcall_settin
 from xmu_rollcall.courseware import CourseSummary, CoursewareItem
 from xmu_rollcall.desktop_qt.course_picker import CoursePicker
 from xmu_rollcall.desktop_qt.homework_window import HomeworkWindow
-from xmu_rollcall.learning import LearningApi, LearningStore, LearningTask, LOCAL_TZ, SubmissionUncertain
+from xmu_rollcall.learning import LearningApi, LearningStore, LearningTask, LOCAL_TZ, SubmissionUncertain, submission_file_counts
 from xmu_rollcall.learning_html import submission_html
 
 
@@ -53,6 +53,23 @@ def test_meaningful_body_accepts_platform_preview_but_does_not_hide_user_named_f
     api.request = mock.Mock(return_value={})
     api.submit(TASK, "<p>答案</p>", [{"id": 8, "name": "Text content.pdf", "source": ""}])
     assert api.request.call_args.kwargs["json"]["uploads"] == [8]
+
+
+def test_body_only_has_no_upload_even_when_cached_preview_lost_its_source():
+    preview = {"id": 99, "name": "", "source": "auto-generated-pdf"}
+    api = LearningApi(None)
+    api.homework = mock.Mock(side_effect=[
+        snapshot("<p>旧正文</p>", record_id=1, uploads=[preview]),
+        snapshot("1", record_id=2, uploads=[{"id": 100, "name": None, "source": "auto-generated-pdf"}]),
+    ])
+    api.request = mock.Mock(return_value={})
+    result = api.submit(TASK, "1", [{"id": 99}])
+    api.request.assert_called_once()
+    assert api.request.call_args.kwargs["json"]["comment"] == "1"
+    assert api.request.call_args.kwargs["json"]["uploads"] == []
+    assert submission_file_counts(result["submission"]) == {
+        "attachment_count": 0, "platform_text_preview_count": 1
+    }
 
 
 def test_empty_body_with_unexpected_generated_pdf_is_not_reported_success():

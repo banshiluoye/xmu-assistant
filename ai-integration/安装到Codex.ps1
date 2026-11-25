@@ -1,8 +1,9 @@
-param([switch]$AllowSubmit,[string]$CodexDirectory)
+param([switch]$AllowSubmit,[string]$CodexDirectory,[switch]$DraftOnly)
 $ErrorActionPreference='Stop'
 $bundleRoot=$PSScriptRoot
-$server=Join-Path $bundleRoot 'xmu-study-mcp-1.10.2.exe'
-if (-not (Test-Path -LiteralPath $server)) { throw '请从完整运行包执行安装脚本，缺少 xmu-study-mcp-1.10.2.exe。' }
+$server=Join-Path $bundleRoot 'xmu-study-mcp-1.10.3.exe'
+if (-not (Test-Path -LiteralPath $server)) { throw '请从完整运行包执行安装脚本，缺少 xmu-study-mcp-1.10.3.exe。' }
+if ($AllowSubmit -and $DraftOnly) { throw '请选择一种提交模式。' }
 $codexRoot=if ($CodexDirectory) { $CodexDirectory } elseif ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $configPath=Join-Path $codexRoot 'config.toml'
 $skillBase=if ($CodexDirectory) { Join-Path $codexRoot 'skills' } else { Join-Path $env:USERPROFILE '.agents\skills' }
@@ -13,8 +14,8 @@ New-Item -ItemType Directory -Path $codexRoot,$skillTarget -Force | Out-Null
 $content=if (Test-Path -LiteralPath $configPath) { [IO.File]::ReadAllText($configPath) } else { '' }
 $section='(?ms)^\[mcp_servers\.xmu-study\]\s*\r?\n.*?(?=^\[|\z)'
 $command=$server.Replace('\','/') | ConvertTo-Json -Compress
-$arguments=if ($AllowSubmit) { '["--allow-submit"]' } else { '[]' }
-$newSection="[mcp_servers.xmu-study]`ncommand = $command`nargs = $arguments`nstartup_timeout_sec = 30`ntool_timeout_sec = 180`n`n"
+$arguments=if ($DraftOnly) { '["--draft-only"]' } else { '[]' }
+$newSection="[mcp_servers.xmu-study]`ncommand = $command`nargs = $arguments`nstartup_timeout_sec = 30`ntool_timeout_sec = 600`n`n"
 if ($content -match $section) {
     $updated=[regex]::Replace($content,$section,[System.Text.RegularExpressions.MatchEvaluator]{param($match) $newSection})
 } else {
@@ -35,4 +36,4 @@ foreach ($directory in @('agents','references')) {
     Get-ChildItem -LiteralPath (Join-Path $skillSource $directory) -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $destination -Force }
 }
 Write-Output '已配置 xmu-study MCP 并安装厦大学习助手 Skill。重启客户端或重新加载 MCP 后使用。'
-Write-Output ('正式交付：'+$(if ($AllowSubmit) { '已启用，仍需用户明确要求' } else { '未启用；支持平台草稿' }))
+Write-Output ('正式交付：'+$(if ($DraftOnly) { '未启用，支持平台草稿' } else { '已启用，提交前由本机窗口请求用户确认' }))

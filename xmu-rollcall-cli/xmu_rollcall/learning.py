@@ -21,11 +21,18 @@ TASK_TYPES = {"homework": "作业", "exam": "测验", "questionnaire": "问卷",
 
 
 def user_attachments(submission):
-    return [item for item in submission.get("uploads", []) if item.get("source") != "auto-generated-pdf"]
+    return [item for item in submission.get("uploads") or [] if item.get("source") != "auto-generated-pdf"]
 
 
 def generated_previews(submission):
-    return [item for item in submission.get("uploads", []) if item.get("source") == "auto-generated-pdf"]
+    return [item for item in submission.get("uploads") or [] if item.get("source") == "auto-generated-pdf"]
+
+
+def submission_file_counts(submission):
+    return {
+        "attachment_count": len(user_attachments(submission)),
+        "platform_text_preview_count": len(generated_previews(submission)),
+    }
 
 
 def platform_time(value):
@@ -194,20 +201,19 @@ class LearningApi:
 
     def submit(self, task, content, uploads, *, is_draft=False):
         content = submission_html(content)
-        uploads = user_attachments({"uploads": uploads})
         current = self.homework(task)
         detail = current["detail"]
         if current["group"]:
             raise ValueError("分组作业请在原平台提交")
         if detail.get("is_closed") or detail.get("is_started") is False:
             raise ValueError("作业当前不可提交，请检查开放时间")
-        expected = {str(entry["id"]) for entry in uploads}
-        def matches(submission):
-            return (submission.get("id") is not None and bool(submission.get("is_draft")) == is_draft
-                    and submission_html(submission.get("comment") or "") == content
-                    and expected == {str(entry.get("id")) for entry in user_attachments(submission)}
-                    and (bool(content) or not generated_previews(submission)))
-        if matches(current["submission"]):
+        # A legacy draft may have kept only the attachment ID and lost source.
+        previews = {str(item["id"]) for item in generated_previews(current["submission"]) if item.get("id") is not None}
+        uploads = [
+            item for item in user_attachments({"uploads": uploads})
+            if str(item["id"]) not in previews
+        ]
+        if submission_matches(current["submission"], content, uploads, is_draft=is_draft):
             return current
         self.ensure_current()
         payload = {"comment": content, "uploads": [entry["id"] for entry in uploads], "slides": [], "is_draft": is_draft}
@@ -218,10 +224,20 @@ class LearningApi:
             pass
         checked = self.homework(task)
         submission = checked["submission"]
-        confirmed = matches(submission)
-        if not confirmed:
+        if not submission_matches(submission, content, uploads, is_draft=is_draft):
             raise SubmissionUncertain("提交结果尚未确认，已保留本地草稿和上传附件；请刷新记录或打开原页面检查，避免直接重交。")
         return checked
+
+
+def submission_matches(submission, content, uploads, *, is_draft):
+    expected = {str(entry["id"]) for entry in uploads}
+    return (
+        submission.get("id") is not None
+        and bool(submission.get("is_draft")) == is_draft
+        and submission_html(submission.get("comment") or "") == content
+        and expected == {str(entry.get("id")) for entry in user_attachments(submission)}
+        and (bool(content) or not generated_previews(submission))
+    )
 
 
 class SubmissionUncertain(RuntimeError):

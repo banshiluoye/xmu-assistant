@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 import zipfile
@@ -322,20 +323,103 @@ def test_prepare_has_no_upload_and_commit_draft_verifies_once(campus):
     api.submit.assert_called_once()
 
 
-def test_formal_submission_is_disabled_by_default(campus):
+def test_service_rejects_formal_submission_without_local_confirmation(campus):
     service, _, _, _, api = campus
     _, plan = make_plan(campus)
-    with pytest.raises(ValueError, match="未启用"):
+    with pytest.raises(ValueError, match="本机确认"):
         service.commit_submission(plan["plan_id"], "submit")
     api.upload_file.assert_not_called()
 
 
-def test_explicit_enabled_submission_mode(campus):
+@pytest.mark.parametrize("decision", [False, True])
+def test_formal_submission_requests_one_final_confirmation(campus, decision):
+    from mcp.shared.memory import create_connected_server_and_client_session
+    from xmu_rollcall.mcp_bridge.server import build_server
+
     service, _, _, _, api = campus
-    service.allow_submit = True
+    api.submit.return_value = {"submission": {"id": 123, "is_draft": False}}
     _, plan = make_plan(campus)
-    service.commit_submission(plan["plan_id"], "submit")
-    assert api.submit.call_args.kwargs["is_draft"] is False
+
+    def confirm(preview):
+        api.upload_file.assert_not_called()
+        api.submit.assert_not_called()
+        assert preview["title"] == "实验报告"
+        assert preview["files"][0]["name"] == "report.md"
+        return decision
+
+    service.confirm_submit = Mock(side_effect=confirm)
+
+    async def run():
+        async with create_connected_server_and_client_session(build_server(service)._mcp_server) as client:
+            args = {"plan_id": plan["plan_id"], "mode": "submit"}
+            result = await client.call_tool("commit_submission", args)
+            assert not result.isError
+            assert result.structuredContent["state"] == ("confirmed" if decision else "cancelled")
+            if decision:
+                again = await client.call_tool("commit_submission", args)
+                assert again.structuredContent["reused_receipt"]
+
+    asyncio.run(run())
+    service.confirm_submit.assert_called_once()
+    if decision:
+        api.upload_file.assert_called_once()
+        assert api.submit.call_args.kwargs["is_draft"] is False
+    else:
+        api.upload_file.assert_not_called()
+        api.submit.assert_not_called()
+
+
+def test_cancellation_during_dialog_prevents_late_write(campus):
+    from xmu_rollcall.mcp_bridge.server import build_server
+
+    service, _, _, _, api = campus
+    _, plan = make_plan(campus)
+    showing = threading.Event()
+    close = threading.Event()
+
+    def confirm(_):
+        showing.set()
+        return close.wait(5)
+
+    service.confirm_submit = confirm
+
+    async def run():
+        call = asyncio.create_task(build_server(service).call_tool(
+            "commit_submission", {"plan_id": plan["plan_id"], "mode": "submit"}
+        ))
+        try:
+            assert await asyncio.to_thread(showing.wait, 5)
+            call.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await call
+        finally:
+            close.set()
+
+    asyncio.run(run())
+    api.upload_file.assert_not_called()
+    api.submit.assert_not_called()
+
+
+def test_formal_submission_requires_same_reviewed_file(campus):
+    service, _, _, _, api = campus
+    service.confirm_submit = Mock(return_value=True)
+    file, plan = make_plan(campus)
+    approval, _ = service.review_submission(plan["plan_id"])
+    Path(file["local_path"]).write_text("changed during approval", encoding="utf-8")
+    with pytest.raises(ValueError, match="已变化"):
+        service.commit_submission(plan["plan_id"], "submit", approval=approval)
+    api.upload_file.assert_not_called()
+
+
+def test_draft_receipt_cannot_be_reported_as_formal(campus):
+    service, _, _, _, api = campus
+    service.confirm_submit = Mock(return_value=True)
+    _, plan = make_plan(campus)
+    service.commit_submission(plan["plan_id"], "draft")
+    with pytest.raises(ValueError, match="其他写入模式"):
+        service.review_submission(plan["plan_id"])
+    service.confirm_submit.assert_not_called()
+    api.submit.assert_called_once()
 
 
 @pytest.mark.parametrize("change", ["file", "platform", "closed", "group"])
@@ -356,24 +440,45 @@ def test_stale_or_forbidden_submission_never_uploads(campus, change):
 
 
 def test_uncertain_write_is_persisted_and_not_retried(campus):
-    service, _, _, _, api = campus
+    service, _, _, record, api = campus
     _, plan = make_plan(campus)
     api.submit.side_effect = TimeoutError("secret storage URL")
     with pytest.raises(bridge.SubmissionUncertain):
         service.commit_submission(plan["plan_id"])
     with pytest.raises(ValueError, match="禁止直接重试"):
         service.commit_submission(plan["plan_id"])
+    with pytest.raises(ValueError, match="未核实"):
+        service.prepare_submission("c1", "h1", content_html="a different plan")
+    assert service.submission_status(plan["plan_id"])["state"] == "uncertain"
+    record["submission"] = {
+        "id": 123, "is_draft": True, "comment": "", "uploads": [{"id": 99, "name": "报告.md"}]
+    }
+    receipt = service.submission_status(plan["plan_id"])
+    assert receipt["state"] == "confirmed" and receipt["mode"] == "draft"
+    assert receipt["receipt"]["id"] == 123
     api.submit.assert_called_once()
+
+
+def test_upload_failure_before_submission_is_distinct(campus):
+    service, _, _, _, api = campus
+    _, plan = make_plan(campus)
+    api.upload_file.side_effect = TimeoutError()
+    assert service.commit_submission(plan["plan_id"])["state"] == "failed_before_submit"
+    api.submit.assert_not_called()
+    assert service.prepare_submission("c1", "h1", content_html="next plan")["state"] == "prepared"
 
 
 def test_existing_attachments_preserved_and_teacher_files_not_submitted(campus):
     service, _, _, record, _ = campus
+    record["submission"]["comment"] = "<p>已有正文</p>"
     record["submission"]["uploads"] = [
         {"id": 1, "name": "existing.pdf"},
         {"id": 2, "source": "auto-generated-pdf"},
     ]
     plan = service.prepare_submission("c1", "h1")
     assert plan["kept_existing_files"] == [{"id": 1, "name": "existing.pdf"}]
+    assert plan["content_html"] == "<p>已有正文</p>" and not plan["body_changed"]
+    assert service.prepare_submission("c1", "h1", content_html="")["body_changed"]
     with service.context() as (_, store, _, _):
         p = store.inside("teacher.txt")
         p.write_text("teacher attachment", encoding="utf-8")
@@ -382,16 +487,34 @@ def test_existing_attachments_preserved_and_teacher_files_not_submitted(campus):
         service.prepare_submission("c1", "h1", file_ids=[file["file_id"]])
 
 
+def test_body_only_plan_has_zero_attachments_and_separate_preview_count(campus):
+    service, _, _, record, api = campus
+    record["submission"]["uploads"] = [{"id": 7, "name": "旧附件.pdf"}]
+    plan = service.prepare_submission("c1", "h1", content_html="1", keep_existing=False)
+    assert plan["attachment_count"] == 0
+    assert plan["removed_existing_files"] == [{"id": 7, "name": "旧附件.pdf"}]
+    api.submit.return_value = {"submission": {
+        "id": 123, "is_draft": True, "comment": "1",
+        "uploads": [{"id": 8, "name": "", "source": "auto-generated-pdf"}],
+    }}
+    result = service.commit_submission(plan["plan_id"])
+    api.upload_file.assert_not_called()
+    assert api.submit.call_args.args[1:] == ("1", [])
+    assert result["receipt"]["attachment_count"] == 0
+    assert result["receipt"]["platform_text_preview_count"] == 1
+
+
 def test_mcp_schema_and_annotations_match_operations(campus):
     from xmu_rollcall.mcp_bridge.server import build_server
 
     tools = {t.name: t for t in asyncio.run(build_server(campus[0]).list_tools())}
-    assert len(tools) == 20
+    assert len(tools) == 21
     assert tools["get_monitor_logs"].annotations.readOnlyHint
     assert not tools["get_monitor_logs"].annotations.openWorldHint
     assert tools["get_assignment"].annotations.readOnlyHint
     assert not tools["commit_submission"].annotations.readOnlyHint
     assert tools["commit_submission"].annotations.destructiveHint
+    assert "approval" not in tools["commit_submission"].inputSchema["properties"]
     assert (
         tools["list_tasks"].inputSchema["properties"]["include_overdue"]["type"]
         == "boolean"
@@ -419,12 +542,13 @@ def test_real_stdio_roundtrip_without_live_account(tmp_path):
         async with stdio_client(params) as (reader, writer):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
-                assert len((await session.list_tools()).tools) == 20
+                assert len((await session.list_tools()).tools) == 21
                 value = await session.call_tool("get_status", {})
                 assert (
                     not value.isError
                     and value.structuredContent["account_selected"] is False
                 )
+                assert value.structuredContent["formal_submission_enabled"] == (sys.platform == "win32")
                 logs = await session.call_tool("get_monitor_logs", {})
                 assert not logs.isError and logs.structuredContent["lines"] == []
                 error = await session.call_tool(
