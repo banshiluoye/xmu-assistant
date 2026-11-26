@@ -10,10 +10,15 @@
 
 ## 一句话启动实验任务
 
+> 完成 TF 的环境配置与麻雀推荐系统的模型训练实验并提交。
 
-视频用合成课程回放实际的本地 MCP 调用。客户端定位作业，读取教师附件和进程课件，在工作目录生成实验方案与示例代码，运行管道并检查输出及退出码。录制时用脚本编排调用，方案与代码为演示样例。
+[![观看实验录屏：从一句指令到核对报告](assets/screenshots/tensorflow-experiment-cover.png)](https://github.com/banshiluoye/xmu-assistant/blob/main/assets/screenshots/tensorflow-experiment.mp4)
 
-还可以把任务换成「读学科实践的 Redis 实验要求和工程附件，给出接入方案和验证清单」，或「根据课件讲解 IPv6，并标出资料页码」。MCP 提供查询、读取和保存工具，Skill 告诉 AI 如何定位课程、引用来源和组织成果。实际编写、运行或测试代码由 AI 客户端执行，需要相应的文件权限与运行环境。MCP 1.10.3 的正式交付在展示计划后由 Windows 本机窗口请求用户确认。
+[观看 42 秒实验录屏](https://github.com/banshiluoye/xmu-assistant/blob/main/assets/screenshots/tensorflow-experiment.mp4) · [下载 MP4](https://raw.githubusercontent.com/banshiluoye/xmu-assistant/main/assets/screenshots/tensorflow-experiment.mp4)
+
+这是一次真实任务的录屏节选。Codex 通过厦大学习助手 MCP 核对作业要求，在本机验证 TensorFlow 环境，运行 TestModel 和 EmbeddingMLP，并检查保存的模型能否重新加载。视频后半段展示了实验报告的提交预览，以及交付后返回的报告和运行记录。正式提交前，由用户在 Windows 确认窗口核对并授权。
+
+也可以只让 AI 给出实验方案，或让它根据课件讲解某个知识点并标出页码。Skill 指导 AI 查找资料和核对成果，MCP 提供课程与作业工具，代码运行使用 AI 客户端的本地环境。
 
 ## 相比原版，升级在哪里
 
@@ -106,6 +111,6 @@ MCP 按需启动，桌面应用无需为 AI 接入增加常驻轮询。大课件
 
 ## 隐私与来源
 
-账号、会话、课程数据、个人资料、运行日志及签名密钥保存在使用者或构建者本机。仓库截图和视频使用合成资料。MCP 可读选定的教学资料，符合权限条件时才写入草稿或提交。反馈监控问题时，可连点应用校徽五次导出日志，分享前请遮盖个人信息。
+账号、会话、课程数据、个人资料、运行日志及签名密钥保存在使用者或构建者本机。界面截图使用合成资料。实验视频取自实际操作，公开片段已遮去本机路径和个人提交记录编号。MCP 可读选定的教学资料，符合权限条件时才写入草稿或提交。反馈监控问题时，可连点应用校徽五次导出日志，分享前请遮盖个人信息。
 
 代码沿用 [Apache-2.0 许可](LICENSE)。感谢 [democard/xmu_assistant](https://github.com/democard/xmu_assistant) 与项目所用开源依赖的作者。校徽与素材来源见 [校徽说明](assets/XMU-EMBLEM-SOURCE.md) 及各素材目录的署名文件。本项目由个人独立维护。
