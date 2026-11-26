@@ -46,7 +46,9 @@ Windows 端收到平台续期的会话后会同步到本机缓存，供 MCP 读�
 
 先用 `prepare_submission` 生成本地计划和预览。省略 `content_html` 保留原正文，空字符串清空。原附件默认保留。用户只要求平台草稿时调用 `commit_submission(mode="draft")`。
 
-仅交正文时，传正文、空 `file_ids` 和 `keep_existing=false`，在预览中列出将移除的旧附件。回执里的 `attachment_count` 是用户附件数，`platform_text_preview_count` 是教学平台根据正文生成的预览数。平台网页可能仍显示这种预览。
+作业允许时优先只交附件，新作业的正文留空。用户或作业要求明确指定正文时，在提交预览中提醒一次：畅课可能把正文转为 PDF，网页附件栏里可能多出一项，名称有时显示为空。
+
+仅交正文时，传正文、空 `file_ids` 和 `keep_existing=false`，在预览中列出将移除的旧附件。回执里的 `attachment_count` 是用户附件数，`platform_text_preview_count` 是教学平台根据正文生成的预览数。
 
 正式交付时，AI 先展示预览，再调用 `commit_submission(mode="submit")`。Windows 本机窗口展示作业与附件摘要，用户确认后才开始上传。取消即终止该计划。Windows 默认支持此流程。只需草稿时可用 `--draft-only` 或安装脚本的 `-DraftOnly`。`--allow-submit` 仅保留旧配置兼容。
 

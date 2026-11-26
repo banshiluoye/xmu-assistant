@@ -124,7 +124,7 @@ internal fun HomeworkFlow(inbox: LearningInboxState, task: LearningTask, writing
             item {
                 AndroidView(factory={ctx->EditText(ctx).apply {
                     nativeEditor=this;minLines=4;maxLines=8;textSize=15f;gravity=android.view.Gravity.TOP
-                    hint="填写答案，或直接上传附件";setText(Html.fromHtml(editor.html,Html.FROM_HTML_MODE_LEGACY))
+                    hint="畅课可能把正文转成 PDF，显示在附件栏。作业允许时，建议只交附件。";setText(Html.fromHtml(editor.html,Html.FROM_HTML_MODE_LEGACY))
                     addTextChangedListener(object:TextWatcher {
                         override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
                         override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){}

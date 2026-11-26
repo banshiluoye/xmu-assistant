@@ -111,7 +111,7 @@ def build_answer_panel(window, layout, editor_class):
     toolbar.setSpacing(1)
     window.editor = editor_class()
     window.editor.setAccessibleName("作业答案富文本编辑区")
-    window.editor.setPlaceholderText("可选：在这里填写文字答案。只交附件时可以留空。")
+    window.editor.setPlaceholderText("正文可选。畅课可能把正文转成 PDF，显示在附件栏。作业允许时，建议只交附件。")
     window.editor.setMinimumHeight(95)
     window.editor.filesDropped.connect(window._add_files)
     styles = QComboBox()
